@@ -16,7 +16,7 @@ type AMFValue struct {
 }
 
 type AMFObject struct {
-	Data  *map[string]interface{}
+	Data  map[string]interface{}
 	Cost  int
 	Ended bool
 }
@@ -85,7 +85,7 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 	}
 
 	var v AMFObject
-	v.Data = &obj
+	v.Data = obj
 	v.Cost = pos
 	v.Ended = ended
 

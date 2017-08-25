@@ -3,8 +3,7 @@ package Handshaker
 import (
 	"fmt"
 	"net"
-	"rtmpmate.com/events"
-	"rtmpmate.com/events/Event"
+	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Client"
 	"rtmpmate.com/net/rtmp/Handshaker/Types"
 	"syscall"
@@ -13,8 +12,6 @@ import (
 type Handshaker struct {
 	Client *Client.Client
 	mode   uint8
-
-	events.EventDispatcher
 }
 
 func New(conn *net.TCPConn) (*Handshaker, error) {
@@ -40,5 +37,6 @@ func (this *Handshaker) Shake() {
 	this.Client.InstanceName = "_definst_"
 
 	// Handshake done
-	this.DispatchEvent(Event.New(Event.COMPLETE, this))
+	fmt.Printf("Client %s handshake done.\n", this.Client.ID)
+	Application.OnConnect(this.Client, nil)
 }

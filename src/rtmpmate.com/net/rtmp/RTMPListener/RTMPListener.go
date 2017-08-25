@@ -3,7 +3,6 @@ package RTMPListener
 import (
 	"fmt"
 	"net"
-	"rtmpmate.com/events/Event"
 	"rtmpmate.com/net/rtmp/Handshaker"
 	"strconv"
 )
@@ -65,11 +64,5 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 		return
 	}
 
-	shaker.AddEventListener(Event.COMPLETE, this.onComplete, 0)
 	shaker.Shake()
-}
-
-func (this *RTMPListener) onComplete(e *Event.Event) {
-	var shaker = e.Target.(*Handshaker.Handshaker)
-	shaker.Client.Recv()
 }

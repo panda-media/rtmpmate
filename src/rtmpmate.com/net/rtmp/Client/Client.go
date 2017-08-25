@@ -3,7 +3,6 @@ package Client
 import (
 	"net"
 	"rtmpmate.com/events"
-	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/util/AMF"
 	"syscall"
 )
@@ -66,6 +65,11 @@ type statsToAdmin struct {
 	msgDropped int
 }
 
+type Responder struct {
+	Result func()
+	Status func()
+}
+
 func New(conn *net.TCPConn, id string) (*Client, error) {
 	if conn == nil || id == "" {
 		return nil, syscall.EINVAL
@@ -86,7 +90,7 @@ func (this *Client) Recv() {
 
 }
 
-func (this *Client) Call(methodName string, resultObj *rtmp.Responder, args ...*AMF.AMFValue) bool {
+func (this *Client) Call(methodName string, resultObj *Responder, args ...*AMF.AMFValue) bool {
 	return true
 }
 

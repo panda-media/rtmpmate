@@ -3,7 +3,6 @@ package NetConnection
 import (
 	"net"
 	"rtmpmate.com/events"
-	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Client"
 	"syscall"
 )
@@ -25,6 +24,6 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	return &nc, nil
 }
 
-func (this *NetConnection) Call(methodName string, resp *rtmp.Responder, args []interface{}) bool {
+func (this *NetConnection) Call(methodName string, resp *Client.Responder, args []interface{}) bool {
 	return true
 }
