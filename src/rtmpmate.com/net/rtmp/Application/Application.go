@@ -2,8 +2,8 @@ package Application
 
 import (
 	"fmt"
+	"rtmpmate.com/net/rtmp/Application/Instance"
 	"rtmpmate.com/net/rtmp/Client"
-	"rtmpmate.com/net/rtmp/Instance"
 	"rtmpmate.com/net/rtmp/Stream"
 	"rtmpmate.com/util/AMF"
 	"sync"

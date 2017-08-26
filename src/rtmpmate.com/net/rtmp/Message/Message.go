@@ -13,3 +13,8 @@ type Header struct {
 	Timestamp uint
 	StreamID  [3]byte
 }
+
+func New() (*Message, error) {
+	var msg Message
+	return &msg, nil
+}

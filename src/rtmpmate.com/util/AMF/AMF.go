@@ -7,12 +7,17 @@ import (
 	"rtmpmate.com/util/AMF/Types"
 )
 
+const (
+	AMF0 byte = 0
+	AMF3 byte = 3
+)
+
 type AMFValue struct {
-	AMFType uint8
-	Key     string
-	Data    interface{}
-	Cost    int
-	Ended   bool
+	Type  byte
+	Key   string
+	Data  interface{}
+	Cost  int
+	Ended bool
 }
 
 type AMFObject struct {
@@ -48,7 +53,7 @@ func Decode(data []byte, offset int, size int) (*AMFValue, error) {
 	}
 
 	var v AMFValue
-	v.AMFType = val.AMFType
+	v.Type = val.Type
 	v.Key = key.Data
 	v.Data = val.Data
 	v.Cost = key.Cost + val.Cost
@@ -167,14 +172,14 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 	}
 
 	var pos = 0
-	var valuetype = uint8(data[offset+pos : offset+pos+1][0])
+	var valueType = uint8(data[offset+pos : offset+pos+1][0])
 
 	pos += 1
 
 	var v AMFValue
 	var ended = false
 
-	switch valuetype {
+	switch valueType {
 	case Types.DOUBLE:
 		var bits = binary.BigEndian.Uint64(data[offset+pos : offset+pos+8])
 		v.Data = math.Float64frombits(bits)
@@ -252,10 +257,10 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 
 	default:
 		pos = size
-		return nil, fmt.Errorf("Skipping unsupported AMF value type(%x)", valuetype)
+		return nil, fmt.Errorf("Skipping unsupported AMF value type(%x)", valueType)
 	}
 
-	v.AMFType = valuetype
+	v.Type = valueType
 	v.Cost = pos
 	v.Ended = ended
 
