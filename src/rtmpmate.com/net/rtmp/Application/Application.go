@@ -121,10 +121,10 @@ func (this *Application) GetInstance(name string) (*Instance.Instance, error) {
 }
 
 func (this *Application) AcceptConnection(client *Client.Client) {
-	inst, err := this.GetInstance(client.InstanceName)
+	inst, err := this.GetInstance(client.Instance)
 	if err != nil {
 		fmt.Printf("Failed to get instance \"%s\" of application \"%s\": %v.\n",
-			client.ApplicationName, client.InstanceName, err)
+			client.Application, client.Instance, err)
 		return
 	}
 
@@ -162,9 +162,9 @@ func OnStart() {
 }
 
 func OnConnect(client *Client.Client, args []interface{}) {
-	app, err := Get(client.ApplicationName)
+	app, err := Get(client.Application)
 	if err != nil {
-		fmt.Printf("Failed to get application \"%s\": %v.\n", client.ApplicationName, err)
+		fmt.Printf("Failed to get application \"%s\": %v.\n", client.Application, err)
 		return
 	}
 

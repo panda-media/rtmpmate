@@ -28,7 +28,7 @@ func (this *EventDispatcher) AddEventListener(event string, handler interface{},
 	listeners = append(listeners, listener{handler, count})
 	this.listeners[event] = listeners
 
-	fmt.Printf("Added event: %s, len: %d, cap: %d.\n", event, len(listeners), cap(listeners))
+	fmt.Printf("Added event: %s, len=%d, cap=%d.\n", event, len(listeners), cap(listeners))
 }
 
 func (this *EventDispatcher) RemoveEventListener(event string, handler interface{}) {

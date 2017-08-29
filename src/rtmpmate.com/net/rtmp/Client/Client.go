@@ -4,11 +4,16 @@ import (
 	"net"
 	"rtmpmate.com/events"
 	"rtmpmate.com/util/AMF"
+	"strconv"
 	"syscall"
 )
 
+var index int
+
 type Client struct {
-	conn *net.TCPConn
+	conn        *net.TCPConn
+	Application string
+	Instance    string
 
 	Agent             string
 	AudioSampleAccess string
@@ -23,9 +28,6 @@ type Client struct {
 	VideoSampleAccess string
 	VirtualKey        string
 	WriteAccess       string
-
-	ApplicationName string
-	InstanceName    string
 
 	stats
 	events.EventDispatcher
@@ -70,13 +72,16 @@ type Responder struct {
 	Status func()
 }
 
-func New(conn *net.TCPConn, id string) (*Client, error) {
-	if conn == nil || id == "" {
+func New(conn *net.TCPConn) (*Client, error) {
+	if conn == nil {
 		return nil, syscall.EINVAL
 	}
 
+	index++
+
 	var client Client
-	client.ID = id
+	client.conn = conn
+	client.ID = strconv.Itoa(index)
 	client.ReadAccess = "/"
 	client.WriteAccess = "/"
 
@@ -86,12 +91,28 @@ func New(conn *net.TCPConn, id string) (*Client, error) {
 	return &client, nil
 }
 
-func (this *Client) Recv() {
+func (this *Client) Read(size int) ([]byte, error) {
+	var data = make([]byte, size)
+	var err error
 
+	for n, pos := 0, 0; pos < size; {
+		n, err = this.conn.Read(data[pos:])
+		if err != nil {
+			return nil, err
+		}
+
+		pos += n
+	}
+
+	return data, nil
 }
 
-func (this *Client) Call(methodName string, resultObj *Responder, args ...*AMF.AMFValue) bool {
-	return true
+func (this *Client) Write(b []byte) (int, error) {
+	return this.conn.Write(b)
+}
+
+func (this *Client) Call(methodName string, resultObj *Responder, args ...*AMF.AMFValue) error {
+	return nil
 }
 
 func (this *Client) Ping() {
@@ -104,4 +125,8 @@ func (this *Client) CheckBandwidth() {
 
 func (this *Client) GetStats() *stats {
 	return &this.stats
+}
+
+func (this *Client) Close() error {
+	return this.conn.Close()
 }

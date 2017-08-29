@@ -1,4 +1,4 @@
-package StatusLevel
+package Level
 
 import ()
 
