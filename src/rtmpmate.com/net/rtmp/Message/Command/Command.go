@@ -8,8 +8,8 @@ const (
 	CONNECT       = "connect"
 	CLOSE         = "close"
 	CREATE_STREAM = "createStream"
-	_RESULT       = "_result"
-	_ERROR        = "_error"
+	RESULT        = "_result"
+	ERROR         = "_error"
 
 	PLAY          = "play"
 	PLAY2         = "play2"

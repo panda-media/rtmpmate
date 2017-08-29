@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net"
 	"rtmpmate.com/net/rtmp"
-	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Client"
 	"rtmpmate.com/net/rtmp/Handshaker/Types"
 	"syscall"
@@ -45,7 +44,7 @@ func New(conn *net.TCPConn) (*Handshaker, error) {
 }
 
 func (this *Handshaker) Shake() error {
-	data, err := this.Client.Read(1 + PACKET_SIZE)
+	data, err := this.Client.Read(1+PACKET_SIZE, false)
 	if err != nil {
 		return err
 	}
@@ -66,8 +65,7 @@ func (this *Handshaker) Shake() error {
 	}
 
 	// Handshake done
-	fmt.Printf("Handshake done: client=%s.\n", this.Client.ID)
-	Application.OnConnect(this.Client, nil)
+	fmt.Printf("Handshake done: id=%s.\n", this.Client.ID)
 
 	return nil
 }
@@ -104,7 +102,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// C2
-	c2, err := this.Client.Read(PACKET_SIZE)
+	c2, err := this.Client.Read(PACKET_SIZE, false)
 	if err != nil {
 		return err
 	}

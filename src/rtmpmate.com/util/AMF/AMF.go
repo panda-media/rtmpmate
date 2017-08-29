@@ -331,28 +331,8 @@ func (this *Encoder) AppendInt32(n int32, littleEndian bool) error {
 	return nil
 }
 
-func (this *Encoder) Encode(k string, o *AMFObject) error {
-	err := this.EncodeString(k)
-	if err != nil {
-		return err
-	}
-
-	err = this.buffer.WriteByte(Types.OBJECT)
-	if err != nil {
-		return err
-	}
-
-	err = this.EncodeObject(o)
-	if err != nil {
-		return err
-	}
-
-	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (this *Encoder) Encode() ([]byte, error) {
+	return this.buffer.Bytes(), nil
 }
 
 func (this *Encoder) EncodeNumber(n float64) error {
@@ -420,6 +400,25 @@ func (this *Encoder) EncodeString(s string) error {
 }
 
 func (this *Encoder) EncodeObject(o *AMFObject) error {
+	err := this.buffer.WriteByte(Types.OBJECT)
+	if err != nil {
+		return err
+	}
+
+	err = this.encodeProperties(o)
+	if err != nil {
+		return err
+	}
+
+	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (this *Encoder) encodeProperties(o *AMFObject) error {
 	for item := o.Data.Front(); item != nil; item = item.Next() {
 		v := item.Value.(*AMFValue)
 		if len(v.Key) > 0 {
@@ -429,51 +428,9 @@ func (this *Encoder) EncodeObject(o *AMFObject) error {
 			}
 		}
 
-		switch v.Type {
-		case Types.DOUBLE:
-			this.EncodeNumber(v.Data.(float64))
-
-		case Types.BOOLEAN:
-			this.EncodeBoolean(v.Data.(bool))
-
-		case Types.STRING:
-			this.EncodeString(v.Data.(string))
-
-		case Types.OBJECT:
-			err := this.buffer.WriteByte(Types.OBJECT)
-			if err != nil {
-				return err
-			}
-
-			obj := AMFObject{v.Data.(list.List), 0, true}
-			this.EncodeObject(&obj)
-
-			err = this.buffer.WriteByte(Types.END_OF_OBJECT)
-			if err != nil {
-				return err
-			}
-
-		case Types.NULL:
-			this.EncodeNull()
-
-		case Types.UNDEFINED:
-			this.EncodeUndefined()
-
-		case Types.MIXED_ARRAY:
-			obj := AMFObject{v.Data.(list.List), 0, true}
-			this.EncodeMixedArray(&obj)
-
-		case Types.ARRAY:
-			obj := AMFObject{v.Data.(list.List), 0, true}
-			this.EncodeArray(&obj)
-
-		case Types.DATE:
-			this.EncodeDate(v.Data.(float64), v.Offset)
-
-		case Types.LONG_STRING:
-			this.encodeLongString(v.Data.(string))
-
-		default:
+		err := this.EncodeValue(v)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -500,7 +457,7 @@ func (this *Encoder) EncodeMixedArray(o *AMFObject) error {
 		return err
 	}
 
-	this.EncodeObject(o)
+	this.encodeProperties(o)
 
 	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
 	if err != nil {
@@ -522,7 +479,7 @@ func (this *Encoder) EncodeArray(o *AMFObject) error {
 		return err
 	}
 
-	this.EncodeObject(o)
+	this.encodeProperties(o)
 
 	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
 	if err != nil {
@@ -571,6 +528,60 @@ func (this *Encoder) encodeLongString(ls string) error {
 	_, err = this.buffer.Write([]byte(ls))
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (this *Encoder) EncodeValue(v *AMFValue) error {
+	switch v.Type {
+	case Types.DOUBLE:
+		this.EncodeNumber(v.Data.(float64))
+
+	case Types.BOOLEAN:
+		this.EncodeBoolean(v.Data.(bool))
+
+	case Types.STRING:
+		this.EncodeString(v.Data.(string))
+
+	case Types.OBJECT:
+		err := this.buffer.WriteByte(Types.OBJECT)
+		if err != nil {
+			return err
+		}
+
+		obj := AMFObject{v.Data.(list.List), 0, true}
+		err = this.EncodeObject(&obj)
+		if err != nil {
+			return err
+		}
+
+		err = this.buffer.WriteByte(Types.END_OF_OBJECT)
+		if err != nil {
+			return err
+		}
+
+	case Types.NULL:
+		this.EncodeNull()
+
+	case Types.UNDEFINED:
+		this.EncodeUndefined()
+
+	case Types.MIXED_ARRAY:
+		obj := AMFObject{v.Data.(list.List), 0, true}
+		this.EncodeMixedArray(&obj)
+
+	case Types.ARRAY:
+		obj := AMFObject{v.Data.(list.List), 0, true}
+		this.EncodeArray(&obj)
+
+	case Types.DATE:
+		this.EncodeDate(v.Data.(float64), v.Offset)
+
+	case Types.LONG_STRING:
+		this.encodeLongString(v.Data.(string))
+
+	default:
 	}
 
 	return nil
