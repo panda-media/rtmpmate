@@ -3,7 +3,7 @@ package Types
 import ()
 
 const (
-	CHUNK_SIZE         byte = 1
+	SET_CHUNK_SIZE     byte = 1
 	ABORT              byte = 2
 	ACK                byte = 3
 	USER_CONTROL       byte = 4

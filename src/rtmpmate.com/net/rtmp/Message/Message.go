@@ -9,9 +9,9 @@ type Message struct {
 
 type Header struct {
 	Type      byte
-	Length    [3]byte
-	Timestamp uint
-	StreamID  [3]byte
+	Length    uint32 // 3 bytes
+	Timestamp uint32
+	StreamID  uint32 // 3 bytes
 }
 
 func New() (*Message, error) {

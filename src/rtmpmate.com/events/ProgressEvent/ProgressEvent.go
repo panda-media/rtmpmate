@@ -13,14 +13,15 @@ type ProgressEvent struct {
 	Event.Event
 	BytesLoaded int
 	BytesTotal  int
+	Data        interface{}
 }
 
 func New(Type string, Target interface{}, BytesLoaded int, BytesTotal int) *ProgressEvent {
-	return &ProgressEvent{Event.Event{Type, Target}, BytesLoaded, BytesTotal}
+	return &ProgressEvent{Event.Event{Type, Target}, BytesLoaded, BytesTotal, nil}
 }
 
 func (this *ProgressEvent) Clone() *ProgressEvent {
-	return &ProgressEvent{Event.Event{this.Type, this}, this.BytesLoaded, this.BytesTotal}
+	return &ProgressEvent{Event.Event{this.Type, this}, this.BytesLoaded, this.BytesTotal, this.Data}
 }
 
 func (this *ProgressEvent) ToString() string {

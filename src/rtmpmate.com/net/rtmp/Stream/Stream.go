@@ -1,6 +1,7 @@
 package Stream
 
 import (
+	"container/list"
 	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
 	"rtmpmate.com/util/AMF"
@@ -9,6 +10,7 @@ import (
 
 type Stream struct {
 	Name               string
+	Chunks             list.List
 	Live               bool
 	Time               int
 	BufferTime         int

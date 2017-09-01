@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Client"
 	"rtmpmate.com/net/rtmp/Handshaker/Types"
 	"syscall"
@@ -19,6 +18,29 @@ const (
 	DIGEST_SIZE = 32
 	VERSION     = 0x5033029
 )
+
+var FP_KEY = []byte{
+	0x47, 0x65, 0x6E, 0x75, 0x69, 0x6E, 0x65, 0x20,
+	0x41, 0x64, 0x6F, 0x62, 0x65, 0x20, 0x46, 0x6C,
+	0x61, 0x73, 0x68, 0x20, 0x50, 0x6C, 0x61, 0x79,
+	0x65, 0x72, 0x20, 0x30, 0x30, 0x31, /* Genuine Adobe Flash Player 001 */
+	0xF0, 0xEE, 0xC2, 0x4A, 0x80, 0x68, 0xBE, 0xE8,
+	0x2E, 0x00, 0xD0, 0xD1, 0x02, 0x9E, 0x7E, 0x57,
+	0x6E, 0xEC, 0x5D, 0x2D, 0x29, 0x80, 0x6F, 0xAB,
+	0x93, 0xB8, 0xE6, 0x36, 0xCF, 0xEB, 0x31, 0xAE,
+}
+
+var FMS_KEY = []byte{
+	0x47, 0x65, 0x6E, 0x75, 0x69, 0x6E, 0x65, 0x20,
+	0x41, 0x64, 0x6F, 0x62, 0x65, 0x20, 0x46, 0x6C,
+	0x61, 0x73, 0x68, 0x20, 0x4D, 0x65, 0x64, 0x69,
+	0x61, 0x20, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72,
+	0x20, 0x30, 0x30, 0x31, // Genuine Adobe Flash Media Server 001
+	0xF0, 0xEE, 0xC2, 0x4A, 0x80, 0x68, 0xBE, 0xE8,
+	0x2E, 0x00, 0xD0, 0xD1, 0x02, 0x9E, 0x7E, 0x57,
+	0x6E, 0xEC, 0x5D, 0x2D, 0x29, 0x80, 0x6F, 0xAB,
+	0x93, 0xB8, 0xE6, 0x36, 0xCF, 0xEB, 0x31, 0xAE,
+}
 
 type Handshaker struct {
 	Client *Client.Client
@@ -60,9 +82,9 @@ func (this *Handshaker) Shake() error {
 		err = this.complexHandshake(data[1:])
 	}
 
-	if err != nil {
+	/*if err != nil {
 		return err
-	}
+	}*/
 
 	// Handshake done
 	fmt.Printf("Handshake done: id=%s.\n", this.Client.ID)
@@ -117,7 +139,159 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 }
 
 func (this *Handshaker) complexHandshake(c1 []byte) error {
+	var middle bool
+	c1Digest, _, err := this.validateClient(c1, &middle)
+	if err != nil {
+		return fmt.Errorf("Invalid C1 data: %v.\n", err)
+	}
+
+	// S1
+	s1 := this.getComplexS1()
+	digestOffset, err := this.getDigestOffset(s1, middle)
+	if err != nil {
+		return fmt.Errorf("Failed to get S1 digest offset: %v.\n", err)
+	}
+
+	s1Random := make([]byte, PACKET_SIZE-DIGEST_SIZE)
+	copy(s1Random, s1[:digestOffset])
+	copy(s1Random[digestOffset:], s1[digestOffset+DIGEST_SIZE:])
+
+	s1Hash := hmac.New(sha256.New, FMS_KEY[:36])
+	s1Hash.Write(s1Random)
+
+	s1Digest := s1Hash.Sum(nil)
+	copy(s1[digestOffset:digestOffset+DIGEST_SIZE], s1Digest)
+
+	// S2
+	s2Hash := hmac.New(sha256.New, FMS_KEY[:68])
+	s2Hash.Write(c1Digest)
+
+	s2Tmp := this.getComplexS2()
+	s2Digest := s2Hash.Sum(nil)
+
+	s2Hash = hmac.New(sha256.New, s2Digest)
+	s2Hash.Write(s2Tmp)
+
+	s2 := s2Hash.Sum(nil)
+
+	// send S0 S1 S2
+	_, err = this.Client.Write([]byte{0x03})
+	if err != nil {
+		return err
+	}
+
+	_, err = this.Client.Write(s1)
+	if err != nil {
+		return err
+	}
+
+	_, err = this.Client.Write(s2Tmp)
+	if err != nil {
+		return err
+	}
+
+	_, err = this.Client.Write(s2)
+	if err != nil {
+		return err
+	}
+
+	// recv C2
+	c2, err := this.Client.Read(PACKET_SIZE, false)
+	if err != nil {
+		return err
+	}
+
+	if len(c2) != PACKET_SIZE {
+		return fmt.Errorf("Invalid C2")
+	}
+
+	for i := 0; i < PACKET_SIZE; i++ {
+		if c2[i] != s1[i] {
+			return fmt.Errorf("C2 != S1")
+		}
+	}
+
 	return nil
+}
+
+func (this *Handshaker) validateClient(c1 []byte, middle *bool) ([]byte, []byte, error) {
+	digest, challenge, err := this.validateClientScheme(c1, true)
+	if err == nil {
+		*middle = true
+		return digest, challenge, nil
+	}
+
+	digest, challenge, err = this.validateClientScheme(c1, false)
+	if err == nil {
+		*middle = false
+		return digest, challenge, nil
+	}
+
+	return nil, nil, fmt.Errorf("unknown scheme")
+}
+
+func (this *Handshaker) validateClientScheme(c1 []byte, middle bool) ([]byte, []byte, error) {
+	digestOffset, err := this.getDigestOffset(c1, middle)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	digest := make([]byte, DIGEST_SIZE)
+	copy(digest, c1[digestOffset:digestOffset+DIGEST_SIZE])
+
+	random := make([]byte, PACKET_SIZE-DIGEST_SIZE)
+	copy(random, c1[:digestOffset])
+	copy(random[digestOffset:], c1[digestOffset+DIGEST_SIZE:])
+
+	hash := hmac.New(sha256.New, FP_KEY[:30])
+	hash.Write(random)
+
+	tmp := hash.Sum(nil)
+	if bytes.Compare(tmp, digest) != 0 {
+		return nil, nil, syscall.EINVAL
+	}
+
+	challengeOffset, err := this.getDHOffset(c1, middle)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	challenge := make([]byte, 128)
+	copy(challenge, c1[challengeOffset:challengeOffset+128])
+
+	return digest, challenge, nil
+}
+
+func (this *Handshaker) getDigestOffset(c1 []byte, middle bool) (int, error) {
+	offset := 8 + 4
+	if middle {
+		offset += 764
+	}
+
+	offset += (int(c1[offset-4]) + int(c1[offset-3]) + int(c1[offset-2]) + int(c1[offset-1])) % 728
+	if offset+DIGEST_SIZE > PACKET_SIZE {
+		return 0, fmt.Errorf("%d out of range", offset)
+	}
+
+	return offset, nil
+}
+
+func (this *Handshaker) getDHOffset(c1 []byte, middle bool) (int, error) {
+	offset := 8 + 764
+	if middle == false {
+		offset += 764
+	}
+
+	offset = ((int(c1[offset-4]) + int(c1[offset-3]) + int(c1[offset-2]) + int(c1[offset-1])) % 632) + 8
+	if middle == false {
+		offset += 764
+	}
+
+	if offset+128 > PACKET_SIZE {
+		return 0, fmt.Errorf("DH offset %d out of range", offset)
+	}
+
+	return offset, nil
 }
 
 func (this *Handshaker) getComplexS1() []byte {
@@ -141,108 +315,4 @@ func (this *Handshaker) getComplexS2() []byte {
 	}
 
 	return s2
-}
-
-func (this *Handshaker) checkComplexC1(c1 []byte) (int, []byte, []byte) {
-	challenge, digest, err := this.checkComplexC1Scheme(c1, 1)
-	if err == nil {
-		return 0, challenge, digest
-	}
-
-	fmt.Printf("Failed to checkComplexC1Scheme: %v. Keep trying...", err)
-
-	challenge, digest, err = this.checkComplexC1Scheme(c1, 0)
-	if err == nil {
-		return 1, challenge, digest
-	}
-
-	fmt.Printf("Failed to checkComplexC1Scheme: %v.", err)
-
-	return -1, challenge, digest
-}
-
-func (this *Handshaker) checkComplexC1Scheme(c1 []byte, scheme int) ([]byte, []byte, error) {
-	digestOffset := this.getDigestOffset(c1, scheme)
-	challengeOffset := this.getDHOffset(c1, scheme)
-
-	if digestOffset == -1 || challengeOffset == -1 {
-		return nil, nil, syscall.EINVAL
-	}
-
-	size := PACKET_SIZE - DIGEST_SIZE
-	data := make([]byte, size)
-	digest := make([]byte, DIGEST_SIZE)
-
-	copy(digest, c1[digestOffset:DIGEST_SIZE+digestOffset])
-	if digestOffset != 0 {
-		copy(data, c1[:digestOffset])
-		copy(data[digestOffset:], c1[DIGEST_SIZE+digestOffset:])
-	} else {
-		copy(data, c1)
-	}
-
-	hash := hmac.New(sha256.New, rtmp.FP_KEY[:30])
-	hash.Write(data)
-
-	tmp := hash.Sum(nil)
-	if bytes.Compare(tmp, digest) != 0 {
-		return nil, nil, syscall.EINVAL
-	}
-
-	challenge := make([]byte, 128)
-	copy(challenge, c1[challengeOffset:challengeOffset+128])
-
-	return challenge, digest, nil
-}
-
-func (this *Handshaker) getDigestOffset(c1 []byte, scheme int) int {
-	var offset int
-
-	if scheme == 0 {
-		offset = int(c1[8]) + int(c1[9]) + int(c1[10]) + int(c1[11])
-		offset = (offset % 728) + 8 + 4
-
-		if offset+32 > 1536 {
-			return -1
-		}
-
-		return offset
-	} else if scheme == 1 {
-		offset = int(c1[772]) + int(c1[773]) + int(c1[774]) + int(c1[775])
-		offset = (offset % 728) + 772 + 4
-
-		if offset+32 > 1536 {
-			return -1
-		}
-
-		return offset
-	}
-
-	return -1
-}
-
-func (this *Handshaker) getDHOffset(c1 []byte, scheme int) int {
-	var offset int
-
-	if scheme == 0 {
-		offset = int(c1[1532]) + int(c1[1533]) + int(c1[1534]) + int(c1[1535])
-		offset = (offset % 632) + 772
-
-		if offset+128 > 1536 {
-			return -1
-		}
-
-		return offset
-	} else if scheme == 1 {
-		offset = int(c1[768]) + int(c1[769]) + int(c1[770]) + int(c1[771])
-		offset = (offset % 632) + 8
-
-		if offset+128 > 1536 {
-			return -1
-		}
-
-		return offset
-	}
-
-	return -1
 }
