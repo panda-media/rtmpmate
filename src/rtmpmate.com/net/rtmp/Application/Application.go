@@ -3,7 +3,7 @@ package Application
 import (
 	"fmt"
 	"rtmpmate.com/net/rtmp/Application/Instance"
-	"rtmpmate.com/net/rtmp/Client"
+	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/Stream"
 	"rtmpmate.com/util/AMF"
 	"sync"
@@ -120,24 +120,24 @@ func (this *Application) GetInstance(name string) (*Instance.Instance, error) {
 	return inst, nil
 }
 
-func (this *Application) AcceptConnection(client *Client.Client) {
-	inst, err := this.GetInstance(client.Instance)
+func (this *Application) AcceptConnection(nc *NetConnection.NetConnection) {
+	inst, err := this.GetInstance(nc.Instance)
 	if err != nil {
 		fmt.Printf("Failed to get instance \"%s\" of application \"%s\": %v.\n",
-			client.Application, client.Instance, err)
+			nc.Application, nc.Instance, err)
 		return
 	}
 
-	inst.OnConnect(client)
+	inst.OnConnect(nc)
 
-	client.Call("onStatus", nil, nil)
+	nc.Call("onStatus", nil, nil)
 }
 
-func (this *Application) RejectConnection(client *Client.Client, description string, errObj *AMF.AMFObject) {
+func (this *Application) RejectConnection(nc *NetConnection.NetConnection, description string, errObj *AMF.AMFObject) {
 
 }
 
-func (this *Application) RedirectConnection(client *Client.Client, url string, description string, errObj *AMF.AMFObject) {
+func (this *Application) RedirectConnection(nc *NetConnection.NetConnection, url string, description string, errObj *AMF.AMFObject) {
 
 }
 
@@ -145,7 +145,7 @@ func (this *Application) GetStats() *stats {
 	return &this.stats
 }
 
-func (this *Application) Disconnect(client *Client.Client) {
+func (this *Application) Disconnect(nc *NetConnection.NetConnection) {
 
 }
 
@@ -161,25 +161,25 @@ func OnStart() {
 
 }
 
-func OnConnect(client *Client.Client, args []interface{}) {
-	app, err := Get(client.Application)
+func OnConnect(nc *NetConnection.NetConnection, args []interface{}) {
+	app, err := Get(nc.Application)
 	if err != nil {
-		fmt.Printf("Failed to get application \"%s\": %v.\n", client.Application, err)
+		fmt.Printf("Failed to get application \"%s\": %v.\n", nc.Application, err)
 		return
 	}
 
-	app.AcceptConnection(client)
+	app.AcceptConnection(nc)
 }
 
-func OnPublish(client *Client.Client, stream *Stream.Stream) {
-
-}
-
-func OnUnpublish(client *Client.Client, stream *Stream.Stream) {
+func OnPublish(nc *NetConnection.NetConnection, stream *Stream.Stream) {
 
 }
 
-func OnDisconnect(client *Client.Client) {
+func OnUnpublish(nc *NetConnection.NetConnection, stream *Stream.Stream) {
+
+}
+
+func OnDisconnect(nc *NetConnection.NetConnection) {
 
 }
 

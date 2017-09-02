@@ -15,7 +15,16 @@ const (
 	AMF3 byte = 3
 )
 
+type AMFHash struct {
+	Hash map[string]*AMFValue
+}
+
+func (this *AMFHash) Init() {
+	this.Hash = make(map[string]*AMFValue)
+}
+
 type AMFValue struct {
+	AMFHash
 	Type   byte
 	Key    string
 	Data   interface{}
@@ -25,6 +34,7 @@ type AMFValue struct {
 }
 
 type AMFObject struct {
+	AMFHash
 	Data  list.List
 	Cost  int
 	Ended bool
@@ -58,6 +68,7 @@ func Decode(data []byte, offset int, size int) (*AMFValue, error) {
 	}
 
 	var v AMFValue
+	v.Init()
 	v.Type = val.Type
 	v.Key = key.Data
 	v.Data = val.Data
@@ -79,7 +90,7 @@ func DecodeString(data []byte, offset int, size int) (*AMFString, error) {
 	pos += 2
 
 	if length > 0 {
-		v.Data += string(data[offset+pos : offset+pos+int(length)])
+		v.Data = string(data[offset+pos : offset+pos+int(length)])
 		pos += int(length)
 	}
 
@@ -94,6 +105,7 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 	}
 
 	var v AMFObject
+	v.Init()
 
 	var pos = 0
 	var ended = false
@@ -116,6 +128,8 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 
 		val.Key = key.Data
 		v.Data.PushBack(val)
+
+		v.Hash[val.Key] = val
 	}
 
 	v.Cost = pos
@@ -160,7 +174,7 @@ func DecodeLongString(data []byte, offset int, size int) (*AMFLongString, error)
 	pos += 4
 
 	if length > 0 {
-		v.Data += string(data[offset+pos : offset+pos+int(length)])
+		v.Data = string(data[offset+pos : offset+pos+int(length)])
 		pos += int(length)
 	}
 
@@ -180,6 +194,8 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 	pos += 1
 
 	var v AMFValue
+	v.Init()
+
 	var ended = false
 
 	switch valueType {
@@ -550,7 +566,7 @@ func (this *Encoder) EncodeValue(v *AMFValue) error {
 			return err
 		}
 
-		obj := AMFObject{v.Data.(list.List), 0, true}
+		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
 		err = this.EncodeObject(&obj)
 		if err != nil {
 			return err
@@ -568,11 +584,11 @@ func (this *Encoder) EncodeValue(v *AMFValue) error {
 		this.EncodeUndefined()
 
 	case Types.MIXED_ARRAY:
-		obj := AMFObject{v.Data.(list.List), 0, true}
+		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
 		this.EncodeMixedArray(&obj)
 
 	case Types.ARRAY:
-		obj := AMFObject{v.Data.(list.List), 0, true}
+		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
 		this.EncodeArray(&obj)
 
 	case Types.DATE:

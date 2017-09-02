@@ -1,17 +1,17 @@
 package Instance
 
 import (
-	"rtmpmate.com/net/rtmp/Client"
+	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/Stream"
 	"sync"
 )
 
 type Instance struct {
-	Name       string
-	clients    map[string]*Client.Client
-	clientsMtx sync.RWMutex
-	streams    map[string]*Stream.Stream
-	streamsMtx sync.RWMutex
+	Name           string
+	connections    map[string]*NetConnection.NetConnection
+	connectionsMtx sync.RWMutex
+	streams        map[string]*Stream.Stream
+	streamsMtx     sync.RWMutex
 
 	statsToAdmin
 }
@@ -57,7 +57,7 @@ func New(name string) (*Instance, error) {
 
 	var inst Instance
 	inst.Name = name
-	inst.clients = make(map[string]*Client.Client)
+	inst.connections = make(map[string]*NetConnection.NetConnection)
 	inst.streams = make(map[string]*Stream.Stream)
 
 	return &inst, nil
@@ -67,14 +67,14 @@ func (this *Instance) GetStats() *stats {
 	return &this.stats
 }
 
-func (this *Instance) OnConnect(client *Client.Client) {
-	this.clientsMtx.Lock()
-	this.clients[client.ID] = client
-	this.clientsMtx.Unlock()
+func (this *Instance) OnConnect(nc *NetConnection.NetConnection) {
+	this.connectionsMtx.Lock()
+	this.connections[nc.ID] = nc
+	this.connectionsMtx.Unlock()
 }
 
-func (this *Instance) OnDisconnect(client *Client.Client) {
-	this.clientsMtx.Lock()
-	this.clients[client.ID] = nil
-	this.clientsMtx.Unlock()
+func (this *Instance) OnDisconnect(nc *NetConnection.NetConnection) {
+	this.connectionsMtx.Lock()
+	this.connections[nc.ID] = nil
+	this.connectionsMtx.Unlock()
 }

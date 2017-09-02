@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"rtmpmate.com/net/rtmp/Client"
 	"rtmpmate.com/net/rtmp/Handshaker/Types"
+	"rtmpmate.com/net/rtmp/NetConnection"
 	"syscall"
 )
 
@@ -43,8 +43,8 @@ var FMS_KEY = []byte{
 }
 
 type Handshaker struct {
-	Client *Client.Client
-	mode   uint8
+	Conn *NetConnection.NetConnection
+	mode uint8
 }
 
 func New(conn *net.TCPConn) (*Handshaker, error) {
@@ -52,21 +52,21 @@ func New(conn *net.TCPConn) (*Handshaker, error) {
 		return nil, syscall.EINVAL
 	}
 
-	client, err := Client.New(conn)
+	client, err := NetConnection.New(conn)
 	if err != nil {
 		fmt.Printf("Failed to create client: %v.\n", err)
 		return nil, err
 	}
 
 	var shaker Handshaker
-	shaker.Client = client
+	shaker.Conn = client
 	shaker.mode = Types.SIMPLE
 
 	return &shaker, nil
 }
 
 func (this *Handshaker) Shake() error {
-	data, err := this.Client.Read(1+PACKET_SIZE, false)
+	data, err := this.Conn.Read(1+PACKET_SIZE, false)
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (this *Handshaker) Shake() error {
 	}*/
 
 	// Handshake done
-	fmt.Printf("Handshake done: id=%s.\n", this.Client.ID)
+	fmt.Printf("Handshake done: id=%s.\n", this.Conn.ID)
 
 	return nil
 }
@@ -104,7 +104,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 		s01[i] = byte(rand.Int() % 256)
 	}
 
-	n, err := this.Client.Write(s01)
+	n, err := this.Conn.Write(s01)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// s2
-	n, err = this.Client.Write(c1)
+	n, err = this.Conn.Write(c1)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// C2
-	c2, err := this.Client.Read(PACKET_SIZE, false)
+	c2, err := this.Conn.Read(PACKET_SIZE, false)
 	if err != nil {
 		return err
 	}
@@ -175,28 +175,28 @@ func (this *Handshaker) complexHandshake(c1 []byte) error {
 	s2 := s2Hash.Sum(nil)
 
 	// send S0 S1 S2
-	_, err = this.Client.Write([]byte{0x03})
+	_, err = this.Conn.Write([]byte{0x03})
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Client.Write(s1)
+	_, err = this.Conn.Write(s1)
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Client.Write(s2Tmp)
+	_, err = this.Conn.Write(s2Tmp)
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Client.Write(s2)
+	_, err = this.Conn.Write(s2)
 	if err != nil {
 		return err
 	}
 
 	// recv C2
-	c2, err := this.Client.Read(PACKET_SIZE, false)
+	c2, err := this.Conn.Read(PACKET_SIZE, false)
 	if err != nil {
 		return err
 	}

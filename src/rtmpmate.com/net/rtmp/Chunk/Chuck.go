@@ -10,7 +10,6 @@ type Chunk struct {
 	MessageHeader
 	Extended bool
 	Data     bytes.Buffer
-	Loaded   uint32
 	State    byte
 }
 
@@ -27,9 +26,9 @@ type MessageHeader struct {
 }
 
 func New(extended bool) (*Chunk, error) {
-	var chunk Chunk
-	chunk.Extended = extended
-	chunk.State = States.START
+	var c Chunk
+	c.Extended = extended
+	c.State = States.START
 
-	return &chunk, nil
+	return &c, nil
 }

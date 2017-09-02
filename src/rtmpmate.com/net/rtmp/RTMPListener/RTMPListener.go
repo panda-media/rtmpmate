@@ -68,16 +68,16 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 	if err != nil {
 		fmt.Printf("Failed to complete handshake: %v.\n", err)
 	} else {
-		err = shaker.Client.WaitRequest()
+		err = shaker.Conn.WaitRequest()
 		if err != nil {
 			fmt.Printf("Failed to wait request: %v.\n", err)
 		}
 	}
 
-	err = shaker.Client.Close()
+	err = shaker.Conn.Close()
 	if err != nil {
 		fmt.Printf("Failed to close client: %v.\n", err)
 	}
 
-	fmt.Printf("Closed client: id=%s.\n", shaker.Client.ID)
+	fmt.Printf("Closed client: id=%s.\n", shaker.Conn.ID)
 }

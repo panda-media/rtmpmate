@@ -17,7 +17,6 @@ const (
 	AMF3_COMMAND       byte = 17
 	DATA               byte = 18
 	SHARED_OBJECT      byte = 19
-	AMF_COMMAND        byte = 20
+	COMMAND            byte = 20
 	AGGREGATE          byte = 22
-	MAX                byte = 22
 )

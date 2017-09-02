@@ -7,7 +7,7 @@ import (
 
 type VideoMessage struct {
 	Message.Header
-	Data []byte
+	Payload []byte
 }
 
 func New() (*VideoMessage, error) {
