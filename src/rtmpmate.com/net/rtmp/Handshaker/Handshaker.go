@@ -87,7 +87,7 @@ func (this *Handshaker) Shake() error {
 	}*/
 
 	// Handshake done
-	fmt.Printf("Handshake done: id=%s.\n", this.Conn.ID)
+	fmt.Printf("Handshake done: id=%s.\n", this.Conn.FarID)
 
 	return nil
 }

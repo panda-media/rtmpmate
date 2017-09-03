@@ -69,12 +69,12 @@ func (this *Instance) GetStats() *stats {
 
 func (this *Instance) OnConnect(nc *NetConnection.NetConnection) {
 	this.connectionsMtx.Lock()
-	this.connections[nc.ID] = nc
+	this.connections[nc.FarID] = nc
 	this.connectionsMtx.Unlock()
 }
 
 func (this *Instance) OnDisconnect(nc *NetConnection.NetConnection) {
 	this.connectionsMtx.Lock()
-	this.connections[nc.ID] = nil
+	this.connections[nc.FarID] = nil
 	this.connectionsMtx.Unlock()
 }

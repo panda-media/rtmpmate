@@ -9,7 +9,7 @@ type Message struct {
 
 type Header struct {
 	Type      byte
-	Length    uint32 // 3 bytes
+	Length    int // 3 bytes
 	Timestamp uint32
 	StreamID  uint32 // 3 bytes
 }

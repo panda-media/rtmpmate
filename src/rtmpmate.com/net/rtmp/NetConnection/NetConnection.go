@@ -2,13 +2,16 @@ package NetConnection
 
 import (
 	"container/list"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/net/rtmp/Chunk"
+	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
+	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
@@ -32,7 +35,6 @@ type NetConnection struct {
 	AudioSampleAccess string
 	Connected         bool
 	FarID             string
-	ID                string
 	Instance          string
 	IP                string
 	NearID            string
@@ -102,7 +104,9 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	var nc NetConnection
 	nc.conn = conn
 	nc.farChunkSize = 128
-	nc.ID = strconv.Itoa(farID)
+	nc.nearChunkSize = 128
+	nc.FarID = strconv.Itoa(farID)
+	nc.ObjectEncoding = AMF.AMF3
 	nc.ReadAccess = "/"
 	nc.WriteAccess = "/"
 
@@ -134,6 +138,91 @@ func (this *NetConnection) Read(size int, once bool) ([]byte, error) {
 
 func (this *NetConnection) Write(b []byte) (int, error) {
 	return this.conn.Write(b)
+}
+
+func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (int, error) {
+	if h.Length < 2 {
+		return 0, fmt.Errorf("chunk data (len=%d) not enough", h.Length)
+	}
+
+	var c Chunk.Chunk
+	c.Fmt = 0
+
+	for i := 0; i < h.Length; /* void */ {
+		if csid <= 63 {
+			c.Data.WriteByte((c.Fmt << 6) | byte(csid))
+		} else if csid <= 319 {
+			c.Data.WriteByte((c.Fmt << 6) | 0x00)
+			c.Data.WriteByte(byte(csid - 64))
+		} else if csid <= 65599 {
+			tmp := uint16(csid)
+			c.Data.WriteByte((c.Fmt << 6) | 0x01)
+			err := binary.Write(&c.Data, binary.LittleEndian, &tmp)
+			if err != nil {
+				return i, err
+			}
+		} else {
+			return i, fmt.Errorf("chunk size (%d) out of range", h.Length)
+		}
+
+		if c.Fmt <= 2 {
+			if h.Timestamp >= 0xFFFFFF {
+				c.Data.Write([]byte{0xFF, 0xFF, 0xFF})
+			} else {
+				c.Data.Write([]byte{
+					byte(h.Timestamp>>16) & 0xFF,
+					byte(h.Timestamp>>8) & 0xFF,
+					byte(h.Timestamp>>0) & 0xFF},
+				)
+			}
+		}
+		if c.Fmt <= 1 {
+			c.Data.Write([]byte{
+				byte(h.Length>>16) & 0xFF,
+				byte(h.Length>>8) & 0xFF,
+				byte(h.Length>>0) & 0xFF},
+			)
+			c.Data.WriteByte(h.Type)
+		}
+		if c.Fmt == 0 {
+			binary.Write(&c.Data, binary.LittleEndian, &h.StreamID)
+		}
+
+		// Extended Timestamp
+		if h.Timestamp >= 0xFFFFFF {
+			binary.Write(&c.Data, binary.BigEndian, &h.Timestamp)
+		}
+
+		// Chunk Data
+		n := h.Length - i
+		if n > this.nearChunkSize {
+			n = this.nearChunkSize
+		}
+
+		_, err := c.Data.Write(b[i : i+n])
+		if err != nil {
+			return i, err
+		}
+
+		i += n
+
+		if i < h.Length {
+			switch h.Type {
+			default:
+				c.Fmt = 3
+			}
+		} else if i == h.Length {
+			cs := c.Data.Bytes()
+			_, err = this.Write(cs)
+			if err != nil {
+				return i, err
+			}
+		} else {
+			return i, fmt.Errorf("wrote too much")
+		}
+	}
+
+	return h.Length, nil
 }
 
 func (this *NetConnection) WaitRequest() error {
@@ -231,7 +320,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		case States.TIMESTAMP_2:
 			if c.Fmt == 0 || c.Fmt == 1 {
-				c.MessageLength = uint32(b[i]) << 16
+				c.MessageLength = int(b[i]) << 16
 				c.State = States.MESSAGE_LENGTH_0
 			} else if c.Fmt == 2 {
 				if c.Timestamp == 0xFFFFFF {
@@ -247,11 +336,11 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 			}
 
 		case States.MESSAGE_LENGTH_0:
-			c.MessageLength |= uint32(b[i]) << 8
+			c.MessageLength |= int(b[i]) << 8
 			c.State = States.MESSAGE_LENGTH_1
 
 		case States.MESSAGE_LENGTH_1:
-			c.MessageLength |= uint32(b[i])
+			c.MessageLength |= int(b[i])
 			c.State = States.MESSAGE_LENGTH_2
 
 		case States.MESSAGE_LENGTH_2:
@@ -260,7 +349,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		case States.MESSAGE_TYPE_ID:
 			if c.Fmt == 0 {
-				c.MessageStreamID = uint32(b[i]) << 24
+				c.MessageStreamID = uint32(b[i])
 				c.State = States.MESSAGE_STREAM_ID_0
 			} else if c.Fmt == 1 {
 				if c.Timestamp == 0xFFFFFF {
@@ -276,15 +365,15 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 			}
 
 		case States.MESSAGE_STREAM_ID_0:
-			c.MessageStreamID |= uint32(b[i]) << 16
+			c.MessageStreamID |= uint32(b[i]) << 8
 			c.State = States.MESSAGE_STREAM_ID_1
 
 		case States.MESSAGE_STREAM_ID_1:
-			c.MessageStreamID |= uint32(b[i]) << 8
+			c.MessageStreamID |= uint32(b[i]) << 16
 			c.State = States.MESSAGE_STREAM_ID_2
 
 		case States.MESSAGE_STREAM_ID_2:
-			c.MessageStreamID |= uint32(b[i])
+			c.MessageStreamID |= uint32(b[i]) << 24
 			c.State = States.MESSAGE_STREAM_ID_3
 
 		case States.MESSAGE_STREAM_ID_3:
@@ -311,7 +400,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.EXTENDED_TIMESTAMP_3:
 			fallthrough
 		case States.DATA:
-			var n int = int(c.MessageLength) - c.Data.Len()
+			n := int(c.MessageLength) - c.Data.Len()
 			if n > size-i {
 				n = size - i
 			}
@@ -371,10 +460,19 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 	case Types.DATA:
 	case Types.SHARED_OBJECT:
 	case Types.COMMAND:
-		m, _ := CommandMessage.New(AMF.AMF0)
+		m, _ := CommandMessage.New(this.ObjectEncoding)
+		m.Header.Timestamp = c.Timestamp
+		m.Header.StreamID = c.MessageStreamID
+
 		err := m.Parse(b, 0, size)
 		if err != nil {
 			return err
+		}
+
+		encoding, _ := m.CommandObject.Get("objectEncoding")
+		if encoding != nil && encoding.Data.(float64) == 0 {
+			this.ObjectEncoding = AMF.AMF0
+			m.Type = Types.COMMAND
 		}
 
 		err = this.onCommand(m)
@@ -409,16 +507,56 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 
 		var prop AMF.AMFObject
 		prop.Init()
-		prop.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.STRING, Key: "fmsVer", Data: "FMS/5,0,3,3029"})
-		prop.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.DOUBLE, Key: "capabilities", Data: float64(255)})
-		prop.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.DOUBLE, Key: "mode", Data: float64(1)})
+		prop.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.STRING,
+			Key:  "fmsVer",
+			Data: "FMS/5,0,3,3029",
+		})
+		prop.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.DOUBLE,
+			Key:  "capabilities",
+			Data: float64(255),
+		})
+		prop.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.DOUBLE,
+			Key:  "mode",
+			Data: float64(1),
+		})
 		encoder.EncodeObject(&prop)
 
 		var info AMF.AMFObject
 		info.Init()
-		info.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.STRING, Key: "level", Data: Level.STATUS})
-		info.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.STRING, Key: "code", Data: Code.NETCONNECTION_CONNECT_SUCCESS})
-		info.Data.PushBack(&AMF.AMFValue{Type: AMFTypes.STRING, Key: "description", Data: "Connection connected."})
+		info.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.STRING,
+			Key:  "level",
+			Data: Level.STATUS,
+		})
+		info.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.STRING,
+			Key:  "code",
+			Data: Code.NETCONNECTION_CONNECT_SUCCESS,
+		})
+		info.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.STRING,
+			Key:  "description",
+			Data: "Connection succeeded.",
+		})
+		info.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.DOUBLE,
+			Key:  "objectEncoding",
+			Data: float64(this.ObjectEncoding),
+		})
+		var data list.List
+		data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.STRING,
+			Key:  "version",
+			Data: "5,0,3,3029",
+		})
+		info.Data.PushBack(&AMF.AMFValue{
+			Type: AMFTypes.ECMA_ARRAY,
+			Key:  "data",
+			Data: data,
+		})
 		encoder.EncodeObject(&info)
 
 		b, err := encoder.Encode()
@@ -426,7 +564,9 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 			return err
 		}
 
-		_, err = this.Write(b)
+		m.Length = len(b)
+
+		_, err = this.WriteByChunk(b, CSIDs.COMMAND, &m.Header)
 		if err != nil {
 			return err
 		}

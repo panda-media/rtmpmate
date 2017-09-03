@@ -11,9 +11,9 @@ const (
 	NULL          = 0x05
 	UNDEFINED     = 0x06
 	REFERENCE     = 0x07
-	MIXED_ARRAY   = 0x08
+	ECMA_ARRAY    = 0x08
 	END_OF_OBJECT = 0x09
-	ARRAY         = 0x0A
+	STRICT_ARRAY  = 0x0A
 	DATE          = 0x0B
 	LONG_STRING   = 0x0C
 	UNSUPPORTED   = 0x0D

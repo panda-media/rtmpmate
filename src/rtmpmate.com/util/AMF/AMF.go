@@ -23,6 +23,10 @@ func (this *AMFHash) Init() {
 	this.Hash = make(map[string]*AMFValue)
 }
 
+func (this *AMFHash) Get(key string) (*AMFValue, error) {
+	return this.Hash[key], nil
+}
+
 type AMFValue struct {
 	AMFHash
 	Type   byte
@@ -138,6 +142,86 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 	return &v, nil
 }
 
+func DecodeECMAArray(data []byte, offset int, size int) (*AMFObject, error) {
+	if size < 3 {
+		return nil, fmt.Errorf("Data not enough while decoding AMF ECMA array")
+	}
+
+	var v AMFObject
+	v.Init()
+
+	var pos = 0
+	var ended = false
+
+	var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
+	pos += 4
+
+	for i := uint32(0); i < length; i++ {
+		key, err := DecodeString(data, offset+pos, size-pos)
+		if err != nil {
+			return nil, err
+		}
+
+		pos += key.Cost
+
+		val, err := DecodeValue(data, offset+pos, size-pos)
+		if err != nil {
+			return nil, err
+		}
+
+		pos += val.Cost
+
+		val.Key = key.Data
+		v.Hash[val.Key] = val
+
+		v.Data.PushBack(val)
+
+		if i == length-1 {
+			ended = true
+		}
+	}
+
+	v.Cost = pos
+	v.Ended = ended
+
+	return &v, nil
+}
+
+func DecodeStrictArray(data []byte, offset int, size int) (*AMFObject, error) {
+	if size < 1 {
+		return nil, fmt.Errorf("Data not enough while decoding AMF ECMA array")
+	}
+
+	var v AMFObject
+	v.Init()
+
+	var pos = 0
+	var ended = false
+
+	var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
+	pos += 4
+
+	for i := uint32(0); i < length; i++ {
+		val, err := DecodeValue(data, offset+pos, size-pos)
+		if err != nil {
+			return nil, err
+		}
+
+		pos += val.Cost
+
+		v.Data.PushBack(val)
+
+		if i == length-1 {
+			ended = true
+		}
+	}
+
+	v.Cost = pos
+	v.Ended = ended
+
+	return &v, nil
+}
+
 func DecodeDate(data []byte, offset int, size int) (*AMFDate, error) {
 	if size < 10 {
 		return nil, fmt.Errorf("Data not enough while decoding AMF date")
@@ -232,8 +316,8 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 	case Types.NULL:
 	case Types.UNDEFINED:
 
-	case Types.MIXED_ARRAY:
-		arr, err := DecodeObject(data, offset+pos, size-pos)
+	case Types.ECMA_ARRAY:
+		arr, err := DecodeECMAArray(data, offset+pos, size-pos)
 		if err != nil {
 			return nil, err
 		}
@@ -244,22 +328,14 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 	case Types.END_OF_OBJECT:
 		ended = true
 
-	case Types.ARRAY:
-		var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
-		pos += 4
-
-		var arr list.List
-		for i := uint32(0); i < length; i++ {
-			val, err := DecodeValue(data, offset+pos, size-pos)
-			if err != nil {
-				return nil, err
-			}
-
-			arr.PushBack(val)
-			pos += val.Cost
+	case Types.STRICT_ARRAY:
+		arr, err := DecodeStrictArray(data, offset+pos, size-pos)
+		if err != nil {
+			return nil, err
 		}
 
-		v.Data = arr
+		v.Data = arr.Data
+		pos += arr.Cost
 
 	case Types.DATE:
 		date, err := DecodeDate(data, offset+pos, size-pos)
@@ -316,7 +392,7 @@ func (this *Encoder) AppendInt16(n int16, littleEndian bool) error {
 	return nil
 }
 
-func (this *Encoder) AppendInt24(n int32, littleEndian bool) error {
+/*func (this *Encoder) AppendInt24(n int32, littleEndian bool) error {
 	if littleEndian {
 		this.buffer.WriteByte(byte(n & 0xFF))
 		this.buffer.WriteByte(byte((n >> 8) & 0xFF))
@@ -328,7 +404,7 @@ func (this *Encoder) AppendInt24(n int32, littleEndian bool) error {
 	}
 
 	return nil
-}
+}*/
 
 func (this *Encoder) AppendInt32(n int32, littleEndian bool) error {
 	var order binary.ByteOrder
@@ -426,6 +502,12 @@ func (this *Encoder) EncodeObject(o *AMFObject) error {
 		return err
 	}
 
+	tmp := uint16(0)
+	err = binary.Write(&this.buffer, binary.BigEndian, &tmp)
+	if err != nil {
+		return err
+	}
+
 	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
 	if err != nil {
 		return err
@@ -461,8 +543,8 @@ func (this *Encoder) EncodeUndefined() error {
 	return this.buffer.WriteByte(byte(Types.UNDEFINED))
 }
 
-func (this *Encoder) EncodeMixedArray(o *AMFObject) error {
-	err := this.buffer.WriteByte(Types.MIXED_ARRAY)
+func (this *Encoder) EncodeECMAArray(o *AMFObject) error {
+	err := this.buffer.WriteByte(Types.ECMA_ARRAY)
 	if err != nil {
 		return err
 	}
@@ -475,6 +557,12 @@ func (this *Encoder) EncodeMixedArray(o *AMFObject) error {
 
 	this.encodeProperties(o)
 
+	tmp2 := uint16(0)
+	err = binary.Write(&this.buffer, binary.BigEndian, &tmp2)
+	if err != nil {
+		return err
+	}
+
 	err = this.buffer.WriteByte(Types.END_OF_OBJECT)
 	if err != nil {
 		return err
@@ -483,8 +571,8 @@ func (this *Encoder) EncodeMixedArray(o *AMFObject) error {
 	return nil
 }
 
-func (this *Encoder) EncodeArray(o *AMFObject) error {
-	err := this.buffer.WriteByte(Types.ARRAY)
+func (this *Encoder) EncodeStrictArray(o *AMFObject) error {
+	err := this.buffer.WriteByte(Types.STRICT_ARRAY)
 	if err != nil {
 		return err
 	}
@@ -552,52 +640,70 @@ func (this *Encoder) encodeLongString(ls string) error {
 func (this *Encoder) EncodeValue(v *AMFValue) error {
 	switch v.Type {
 	case Types.DOUBLE:
-		this.EncodeNumber(v.Data.(float64))
+		err := this.EncodeNumber(v.Data.(float64))
+		if err != nil {
+			return err
+		}
 
 	case Types.BOOLEAN:
-		this.EncodeBoolean(v.Data.(bool))
+		err := this.EncodeBoolean(v.Data.(bool))
+		if err != nil {
+			return err
+		}
 
 	case Types.STRING:
-		this.EncodeString(v.Data.(string))
+		err := this.EncodeString(v.Data.(string))
+		if err != nil {
+			return err
+		}
 
 	case Types.OBJECT:
-		err := this.buffer.WriteByte(Types.OBJECT)
-		if err != nil {
-			return err
-		}
-
 		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
-		err = this.EncodeObject(&obj)
-		if err != nil {
-			return err
-		}
-
-		err = this.buffer.WriteByte(Types.END_OF_OBJECT)
+		err := this.EncodeObject(&obj)
 		if err != nil {
 			return err
 		}
 
 	case Types.NULL:
-		this.EncodeNull()
+		err := this.EncodeNull()
+		if err != nil {
+			return err
+		}
 
 	case Types.UNDEFINED:
-		this.EncodeUndefined()
+		err := this.EncodeUndefined()
+		if err != nil {
+			return err
+		}
 
-	case Types.MIXED_ARRAY:
+	case Types.ECMA_ARRAY:
 		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
-		this.EncodeMixedArray(&obj)
+		err := this.EncodeECMAArray(&obj)
+		if err != nil {
+			return err
+		}
 
-	case Types.ARRAY:
+	case Types.STRICT_ARRAY:
 		obj := AMFObject{AMFHash{v.Hash}, v.Data.(list.List), 0, true}
-		this.EncodeArray(&obj)
+		err := this.EncodeStrictArray(&obj)
+		if err != nil {
+			return err
+		}
 
 	case Types.DATE:
-		this.EncodeDate(v.Data.(float64), v.Offset)
+		err := this.EncodeDate(v.Data.(float64), v.Offset)
+		if err != nil {
+			return err
+		}
 
 	case Types.LONG_STRING:
-		this.encodeLongString(v.Data.(string))
+		err := this.encodeLongString(v.Data.(string))
+		if err != nil {
+			return err
+		}
 
 	default:
+		fmt.Errorf("Skipping unsupported AMF value type(%x)", v.Type)
 	}
 
 	return nil

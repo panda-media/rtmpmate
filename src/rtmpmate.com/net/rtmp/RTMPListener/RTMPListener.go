@@ -79,5 +79,5 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 		fmt.Printf("Failed to close client: %v.\n", err)
 	}
 
-	fmt.Printf("Closed client: id=%s.\n", shaker.Conn.ID)
+	fmt.Printf("Closed client: id=%s.\n", shaker.Conn.FarID)
 }

@@ -7,7 +7,6 @@ import (
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
 	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
 )
 
 type CommandMessage struct {
@@ -30,10 +29,10 @@ type CommandMessage struct {
 	Pause          bool
 }
 
-func New(version byte) (*CommandMessage, error) {
+func New(encoding byte) (*CommandMessage, error) {
 	var msg CommandMessage
 
-	if version == AMF.AMF0 {
+	if encoding == AMF.AMF0 {
 		msg.Type = Types.COMMAND
 	} else {
 		msg.Type = Types.AMF3_COMMAND
@@ -69,9 +68,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		offset += v.Cost
-		if v.Type == AMFTypes.OBJECT {
-			this.CommandObject = &AMF.AMFObject{AMF.AMFHash{v.Hash}, v.Data.(list.List), v.Cost, v.Ended}
-		}
+		this.CommandObject = &AMF.AMFObject{AMF.AMFHash{v.Hash}, v.Data.(list.List), v.Cost, v.Ended}
 
 		v, _ = AMF.DecodeValue(b, offset, size-offset)
 		if v != nil {
@@ -89,9 +86,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		offset += v.Cost
-		if v.Type == AMFTypes.OBJECT {
-			this.CommandObject = &AMF.AMFObject{AMF.AMFHash{v.Hash}, v.Data.(list.List), v.Cost, v.Ended}
-		}
+		this.CommandObject = &AMF.AMFObject{AMF.AMFHash{v.Hash}, v.Data.(list.List), v.Cost, v.Ended}
 
 	// NetStream Commands
 	case Commands.PLAY:
