@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"regexp"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
@@ -22,7 +23,10 @@ import (
 	"syscall"
 )
 
-var farID int = 0
+var (
+	farID    int = 0
+	urlRe, _     = regexp.Compile("^(rtmp[es]*)://([a-z0-9.-]+)(:([0-9]+))?/([a-z0-9.-_]+)(/([a-z0-9.-_]*))?$")
+)
 
 type NetConnection struct {
 	conn          *net.TCPConn
@@ -106,10 +110,12 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	nc.conn = conn
 	nc.farChunkSize = 128
 	nc.nearChunkSize = 128
+
 	nc.FarID = strconv.Itoa(farID)
-	nc.ObjectEncoding = AMF.AMF3
-	nc.ReadAccess = "/"
-	nc.WriteAccess = "/"
+	nc.Instance = "_definst_"
+	nc.ObjectEncoding = AMF.AMF0
+	nc.AudioSampleAccess = "/"
+	nc.VideoSampleAccess = "/"
 
 	nc.AddEventListener("checkBandwidth", nc.CheckBandwidth, 0)
 	nc.AddEventListener("getStats", nc.GetStats, 0)
@@ -173,16 +179,16 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 				c.Data.Write([]byte{
 					byte(h.Timestamp>>16) & 0xFF,
 					byte(h.Timestamp>>8) & 0xFF,
-					byte(h.Timestamp>>0) & 0xFF},
-				)
+					byte(h.Timestamp>>0) & 0xFF,
+				})
 			}
 		}
 		if c.Fmt <= 1 {
 			c.Data.Write([]byte{
 				byte(h.Length>>16) & 0xFF,
 				byte(h.Length>>8) & 0xFF,
-				byte(h.Length>>0) & 0xFF},
-			)
+				byte(h.Length>>0) & 0xFF,
+			})
 			c.Data.WriteByte(h.Type)
 		}
 		if c.Fmt == 0 {
@@ -205,7 +211,7 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 			return i, err
 		}
 
-		fmt.Println(c.Data.Bytes())
+		//fmt.Println(c.Data.Bytes())
 
 		i += n
 
@@ -221,7 +227,7 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 				return i, err
 			}
 
-			size := len(cs)
+			/*size := len(cs)
 			for x := 0; x < size; x += 16 {
 				fmt.Printf("\n")
 
@@ -232,7 +238,7 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 						fmt.Printf(" ")
 					}
 				}
-			}
+			}*/
 		} else {
 			return i, fmt.Errorf("wrote too much")
 		}
@@ -503,9 +509,9 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		}
 
 		encoding, _ := m.CommandObject.Get("objectEncoding")
-		if encoding != nil && encoding.Data.(float64) == 0 {
-			this.ObjectEncoding = AMF.AMF0
-			m.Type = Types.COMMAND
+		if encoding != nil && encoding.Data.(float64) != 0 {
+			this.ObjectEncoding = AMF.AMF3
+			m.Type = Types.AMF3_COMMAND
 		}
 
 		err = this.onCommand(m)
@@ -527,6 +533,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 }
 
 func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
+	var encoder AMF.Encoder
+
 	switch m.Name.Data {
 	// NetConnection Commands
 	case Commands.CONNECT:
@@ -534,7 +542,22 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 			return fmt.Errorf("already connected")
 		}
 
-		var encoder AMF.Encoder
+		app, _ := m.CommandObject.Get("app")
+		if app != nil {
+			this.Application = app.Data.(string)
+		}
+
+		tcUrl, _ := m.CommandObject.Get("tcUrl")
+		if tcUrl != nil {
+			arr := urlRe.FindStringSubmatch(tcUrl.Data.(string))
+			if arr != nil {
+				inst := arr[len(arr)-1]
+				if inst != "" {
+					this.Instance = inst
+				}
+			}
+		}
+
 		encoder.EncodeString(Commands.RESULT)
 		encoder.EncodeNumber(1)
 
@@ -592,22 +615,39 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		})
 		encoder.EncodeObject(&info)
 
-		b, err := encoder.Encode()
-		if err != nil {
-			return err
-		}
-
-		m.Length = len(b)
-
-		_, err = this.WriteByChunk(b, CSIDs.COMMAND, &m.Header)
-		if err != nil {
-			return err
-		}
-
 		this.Connected = true
 
 	case Commands.CLOSE:
 	case Commands.CREATE_STREAM:
+		var err error
+		if (this.ReadAccess == "/" || this.ReadAccess == "/"+this.Application) &&
+			(this.WriteAccess == "/" || this.WriteAccess == "/"+this.Application) {
+			encoder.EncodeString(Commands.RESULT)
+		} else {
+			err = fmt.Errorf("Access denied.")
+			encoder.EncodeString(Commands.ERROR)
+		}
+
+		encoder.EncodeNumber(math.Float64frombits(m.TransactionID))
+		encoder.EncodeNull()
+
+		if err != nil {
+			var info AMF.AMFObject
+			info.Init()
+			info.Data.PushBack(&AMF.AMFValue{
+				Type: AMFTypes.STRING,
+				Key:  "level",
+				Data: Level.ERROR,
+			})
+			info.Data.PushBack(&AMF.AMFValue{
+				Type: AMFTypes.STRING,
+				Key:  "code",
+				Data: err.Error(),
+			})
+			encoder.EncodeObject(&info)
+		} else {
+			encoder.EncodeNumber(math.Float64frombits(m.StreamID))
+		}
 
 	// NetStream Commands
 	case Commands.PLAY:
@@ -620,6 +660,18 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 	case Commands.SEEK:
 	case Commands.PAUSE:
 	default:
+	}
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	m.Length = len(b)
+
+	_, err = this.WriteByChunk(b, CSIDs.COMMAND, &m.Header)
+	if err != nil {
+		return err
 	}
 
 	return nil

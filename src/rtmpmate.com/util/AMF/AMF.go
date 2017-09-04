@@ -310,6 +310,7 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 			return nil, err
 		}
 
+		v.Hash = obj.Hash
 		v.Data = obj.Data
 		pos += obj.Cost
 
@@ -322,6 +323,7 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 			return nil, err
 		}
 
+		v.Hash = arr.Hash
 		v.Data = arr.Data
 		pos += arr.Cost
 
@@ -519,8 +521,14 @@ func (this *Encoder) EncodeObject(o *AMFObject) error {
 func (this *Encoder) encodeProperties(o *AMFObject) error {
 	for item := o.Data.Front(); item != nil; item = item.Next() {
 		v := item.Value.(*AMFValue)
-		if len(v.Key) > 0 {
-			err := this.EncodeString(v.Key)
+		s := uint16(len(v.Key))
+		if s > 0 {
+			err := binary.Write(&this.buffer, binary.BigEndian, &s)
+			if err != nil {
+				return err
+			}
+
+			_, err = this.buffer.Write([]byte(v.Key))
 			if err != nil {
 				return err
 			}
