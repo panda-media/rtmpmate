@@ -3,6 +3,7 @@ package CommandMessage
 import (
 	"container/list"
 	"fmt"
+	"math"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
@@ -12,20 +13,20 @@ import (
 type CommandMessage struct {
 	Message.Header
 	Name          AMF.AMFString
-	TransactionID float64
+	TransactionID uint64
 
 	CommandObject  *AMF.AMFObject
 	Arguments      *AMF.AMFObject
 	StreamName     *AMF.AMFString
-	Start          float64
-	Duration       float64
+	Start          uint64
+	Duration       uint64
 	Reset          bool
 	Parameters     *AMF.AMFObject
-	StreamID       float64
+	StreamID       uint64
 	Flag           bool
 	PublishingName *AMF.AMFString
 	PublishingType *AMF.AMFString
-	MilliSeconds   float64
+	MilliSeconds   uint64
 	Pause          bool
 }
 
@@ -57,7 +58,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 	}
 
 	offset += v.Cost
-	this.TransactionID = v.Data.(float64)
+	this.TransactionID = math.Float64bits(v.Data.(float64))
 
 	switch this.Name.Data {
 	// NetConnection Commands

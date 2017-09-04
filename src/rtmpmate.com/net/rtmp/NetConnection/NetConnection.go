@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"net"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/NetStatusEvent/Code"
@@ -31,7 +32,7 @@ type NetConnection struct {
 
 	Agent             string
 	Application       string
-	AudioCodecs       float64
+	AudioCodecs       uint64
 	AudioSampleAccess string
 	Connected         bool
 	FarID             string
@@ -46,7 +47,7 @@ type NetConnection struct {
 	Referrer          string
 	Secure            bool
 	URI               string
-	VideoCodecs       float64
+	VideoCodecs       uint64
 	VideoSampleAccess string
 	VirtualKey        string
 	WriteAccess       string
@@ -89,7 +90,7 @@ type statsToAdmin struct {
 }
 
 type Responder struct {
-	ID     float64
+	ID     uint64
 	Result func()
 	Status func()
 }
@@ -204,6 +205,8 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 			return i, err
 		}
 
+		fmt.Println(c.Data.Bytes())
+
 		i += n
 
 		if i < h.Length {
@@ -216,6 +219,19 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 			_, err = this.Write(cs)
 			if err != nil {
 				return i, err
+			}
+
+			size := len(cs)
+			for x := 0; x < size; x += 16 {
+				fmt.Printf("\n")
+
+				for y := 0; y < int(math.Min(float64(size-x), 16)); y++ {
+					fmt.Printf("%02x ", cs[x+y])
+
+					if y == 7 {
+						fmt.Printf(" ")
+					}
+				}
 			}
 		} else {
 			return i, fmt.Errorf("wrote too much")
@@ -266,7 +282,12 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.START:
 			c.Fmt = (b[i] >> 6) & 0xFF
 			c.CSID = uint32(b[i]) & 0x3F
-			c.State = States.FMT
+
+			if c.Fmt == 3 && c.Extended == false {
+				c.State = States.DATA
+			} else {
+				c.State = States.FMT
+			}
 
 		case States.FMT:
 			switch c.CSID {
@@ -282,8 +303,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 						c.Timestamp = uint32(b[i]) << 24
 						c.State = States.EXTENDED_TIMESTAMP_0
 					} else {
-						i--
-						c.State = States.DATA
+						return fmt.Errorf("Failed to parse chunk: [1].")
 					}
 				} else {
 					c.Timestamp = uint32(b[i]) << 16
@@ -294,7 +314,12 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.CSID_0:
 			c.CSID |= uint32(b[i]) << 8
 			c.CSID += 64
-			c.State = States.CSID_1
+
+			if c.Fmt == 3 && c.Extended == false {
+				c.State = States.DATA
+			} else {
+				c.State = States.CSID_1
+			}
 
 		case States.CSID_1:
 			if c.Fmt == 3 {
@@ -302,8 +327,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
 				} else {
-					i--
-					c.State = States.DATA
+					return fmt.Errorf("Failed to parse chunk: [2].")
 				}
 			} else {
 				c.Timestamp = uint32(b[i]) << 16
@@ -316,7 +340,12 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		case States.TIMESTAMP_1:
 			c.Timestamp |= uint32(b[i])
-			c.State = States.TIMESTAMP_2
+
+			if c.Fmt == 2 && c.Timestamp != 0xFFFFFF {
+				c.State = States.DATA
+			} else {
+				c.State = States.TIMESTAMP_2
+			}
 
 		case States.TIMESTAMP_2:
 			if c.Fmt == 0 || c.Fmt == 1 {
@@ -327,12 +356,10 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
 				} else {
-					i--
-					c.State = States.DATA
+					return fmt.Errorf("Failed to parse chunk: [3].")
 				}
 			} else {
-				// Should not happen
-				return fmt.Errorf("Failed to parse chunk: [1].")
+				return fmt.Errorf("Failed to parse chunk: [4].")
 			}
 
 		case States.MESSAGE_LENGTH_0:
@@ -345,7 +372,12 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		case States.MESSAGE_LENGTH_2:
 			c.MessageTypeID = b[i]
-			c.State = States.MESSAGE_TYPE_ID
+
+			if c.Fmt == 1 && c.Timestamp != 0xFFFFFF {
+				c.State = States.DATA
+			} else {
+				c.State = States.MESSAGE_TYPE_ID
+			}
 
 		case States.MESSAGE_TYPE_ID:
 			if c.Fmt == 0 {
@@ -356,12 +388,10 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
 				} else {
-					i--
-					c.State = States.DATA
+					return fmt.Errorf("Failed to parse chunk: [5].")
 				}
 			} else {
-				// Should not happen
-				return fmt.Errorf("Failed to parse chunk: [2].")
+				return fmt.Errorf("Failed to parse chunk: [6].")
 			}
 
 		case States.MESSAGE_STREAM_ID_0:
@@ -374,15 +404,18 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		case States.MESSAGE_STREAM_ID_2:
 			c.MessageStreamID |= uint32(b[i]) << 24
-			c.State = States.MESSAGE_STREAM_ID_3
+			if c.Timestamp == 0xFFFFFF {
+				c.State = States.MESSAGE_STREAM_ID_3
+			} else {
+				c.State = States.DATA
+			}
 
 		case States.MESSAGE_STREAM_ID_3:
 			if c.Timestamp == 0xFFFFFF {
 				c.Timestamp = uint32(b[i]) << 24
 				c.State = States.EXTENDED_TIMESTAMP_0
 			} else {
-				i--
-				c.State = States.DATA
+				return fmt.Errorf("Failed to parse chunk: [7].")
 			}
 
 		case States.EXTENDED_TIMESTAMP_0:
@@ -429,11 +462,11 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 					c = this.getUncompleteChunk()
 				}
 			} else {
-				return fmt.Errorf("Failed to parse chunk: [3].")
+				return fmt.Errorf("Failed to parse chunk: [8].")
 			}
 
 		default:
-			return fmt.Errorf("Failed to parse chunk: [4].")
+			return fmt.Errorf("Failed to parse chunk: [9].")
 		}
 	}
 
@@ -595,7 +628,7 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 func (this *NetConnection) Call(methodName string, resultObj *Responder, args ...*AMF.AMFValue) error {
 	var encoder AMF.Encoder
 	encoder.EncodeString(methodName)
-	encoder.EncodeNumber(resultObj.ID)
+	encoder.EncodeNumber(float64(resultObj.ID))
 
 	for _, v := range args {
 		encoder.EncodeValue(v)

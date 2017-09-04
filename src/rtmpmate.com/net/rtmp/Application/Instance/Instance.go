@@ -28,8 +28,8 @@ type stats struct {
 type statsToAdmin struct {
 	stats
 
-	launchTime float64 // time the application started.
-	upTime     float64 // time, in seconds, the application has been running.
+	launchTime uint64 // time the application started.
+	upTime     uint64 // time, in seconds, the application has been running.
 
 	totalConnects    int // Total number of socket connections to this instance since the instance was started.
 	totalDisconnects int // Total number of socket disconnections from this instance since the instance was started.

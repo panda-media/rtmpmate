@@ -30,8 +30,8 @@ type stats struct {
 type statsToAdmin struct {
 	stats
 
-	launchTime float64 // time the application started.
-	upTime     float64 // time, in seconds, the application has been running.
+	launchTime uint64 // time the application started.
+	upTime     uint64 // time, in seconds, the application has been running.
 
 	// Total number of instances that have been loaded since the application started.
 	// This property does not represent the total number of active instances loaded. To get the number of active
