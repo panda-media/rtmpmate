@@ -5,12 +5,11 @@ import (
 )
 
 type Body struct {
-	Message.Header
-	Data []byte
-	Size uint
+	Message.Message
+	Size int
 }
 
-func (this *Body) New() (*Body, error) {
+func New() (*Body, error) {
 	var b Body
 	return &b, nil
 }

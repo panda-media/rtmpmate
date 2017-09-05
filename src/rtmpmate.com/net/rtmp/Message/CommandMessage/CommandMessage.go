@@ -44,32 +44,34 @@ func New(encoding byte) (*CommandMessage, error) {
 }
 
 func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
-	v, err := AMF.DecodeValue(b, offset, size-offset)
+	cost := 0
+
+	v, err := AMF.DecodeValue(b, offset+cost, size-cost)
 	if err != nil {
 		return err
 	}
 
-	offset += v.Cost
+	cost += v.Cost
 	this.Name.Data = v.Data.(string)
 	this.Name.Cost = v.Cost
 
-	v, err = AMF.DecodeValue(b, offset, size-offset)
+	v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 	if err != nil {
 		return err
 	}
 
-	offset += v.Cost
+	cost += v.Cost
 	this.TransactionID = math.Float64bits(v.Data.(float64))
 
 	switch this.Name.Data {
 	// NetConnection Commands
 	case Commands.CONNECT:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = &AMF.AMFObject{
 			AMFHash: AMF.AMFHash{v.Hash},
 			Data:    v.Data.(list.List),
@@ -77,9 +79,9 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 			Ended:   v.Ended,
 		}
 
-		v, _ = AMF.DecodeValue(b, offset, size-offset)
+		v, _ = AMF.DecodeValue(b, offset+cost, size-cost)
 		if v != nil {
-			offset += v.Cost
+			cost += v.Cost
 			this.Arguments = &AMF.AMFObject{
 				AMFHash: AMF.AMFHash{v.Hash},
 				Data:    v.Data.(list.List),
@@ -92,12 +94,12 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		fmt.Printf("Parsing command %s.\n", this.Name.Data)
 
 	case Commands.CREATE_STREAM:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = &AMF.AMFObject{
 			AMFHash: AMF.AMFHash{v.Hash},
 			Cost:    v.Cost,
@@ -110,64 +112,64 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 
 	// NetStream Commands
 	case Commands.PLAY:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.StreamName = &AMF.AMFString{
 			Data: v.Data.(string),
 			Cost: v.Cost,
 		}
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Start = v.Data.(float64)
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Duration = v.Data.(float64)
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Reset = v.Data.(bool)
 
 	case Commands.PLAY2:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Parameters = &AMF.AMFObject{
 			AMFHash: AMF.AMFHash{v.Hash},
 			Data:    v.Data.(list.List),
@@ -176,20 +178,20 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 	case Commands.DELETE_STREAM:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.StreamID = math.Float64bits(v.Data.(float64))
 
 	case Commands.CLOSE_STREAM:
@@ -198,93 +200,93 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 	case Commands.RECEIVE_AUDIO:
 		fallthrough
 	case Commands.RECEIVE_VIDEO:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Flag = v.Data.(bool)
 
 	case Commands.PUBLISH:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.PublishingName = &AMF.AMFString{
 			Data: v.Data.(string),
 			Cost: v.Cost,
 		}
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.PublishingType = &AMF.AMFString{
 			Data: v.Data.(string),
 			Cost: v.Cost,
 		}
 
 	case Commands.SEEK:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.MilliSeconds = v.Data.(float64)
 
 	case Commands.PAUSE:
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.CommandObject = nil // v.Type == Types.NULL
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.Pause = v.Data.(bool)
 
-		v, err = AMF.DecodeValue(b, offset, size-offset)
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
 			return err
 		}
 
-		offset += v.Cost
+		cost += v.Cost
 		this.MilliSeconds = v.Data.(float64)
 
 	default:

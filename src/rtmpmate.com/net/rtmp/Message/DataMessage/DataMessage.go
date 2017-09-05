@@ -27,20 +27,22 @@ func New(encoding byte) (*DataMessage, error) {
 }
 
 func (this *DataMessage) Parse(b []byte, offset int, size int) error {
-	k, err := AMF.DecodeString(b, offset, size-offset)
+	cost := 0
+
+	k, err := AMF.DecodeString(b, offset+cost, size-cost)
 	if err != nil {
 		return err
 	}
 
-	offset += k.Cost
+	cost += k.Cost
 	this.Key = k.Data
 
-	v, err := AMF.DecodeValue(b, offset, size-offset)
+	v, err := AMF.DecodeValue(b, offset+cost, size-cost)
 	if err != nil {
 		return err
 	}
 
-	offset += v.Cost
+	cost += v.Cost
 	this.Data = &AMF.AMFObject{
 		AMFHash: AMF.AMFHash{v.Hash},
 		Cost:    v.Cost,

@@ -21,14 +21,16 @@ func New() (*UserControlMessage, error) {
 }
 
 func (this *UserControlMessage) Parse(b []byte, offset int, size int) error {
-	if size < 6 {
+	if size < 10 {
 		return fmt.Errorf("data (size=%d) not enough", size)
 	}
 
-	this.Event.Type = binary.BigEndian.Uint16(b[offset : offset+2])
-	offset += 2
+	cost := 0
 
-	this.Event.Data = b[offset:]
+	this.Event.Type = binary.BigEndian.Uint16(b[offset+cost : offset+cost+2])
+	cost += 2
+
+	this.Event.Data = b[offset+cost : offset+size]
 
 	return nil
 }
