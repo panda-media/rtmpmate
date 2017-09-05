@@ -25,9 +25,8 @@ type MessageHeader struct {
 	MessageStreamID uint32
 }
 
-func New(extended bool) (*Chunk, error) {
+func New() (*Chunk, error) {
 	var c Chunk
-	c.Extended = extended
 	c.State = States.START
 
 	return &c, nil

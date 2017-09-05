@@ -14,9 +14,14 @@ import (
 	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
 	"rtmpmate.com/net/rtmp/Message"
+	"rtmpmate.com/net/rtmp/Message/AudioMessage"
+	"rtmpmate.com/net/rtmp/Message/BandwidthMessage"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
+	"rtmpmate.com/net/rtmp/Message/UserControlMessage"
+	EventTypes "rtmpmate.com/net/rtmp/Message/UserControlMessage/Event/Types"
+	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/util/AMF"
 	AMFTypes "rtmpmate.com/util/AMF/Types"
 	"strconv"
@@ -29,10 +34,13 @@ var (
 )
 
 type NetConnection struct {
-	conn          *net.TCPConn
-	chunks        list.List
-	farChunkSize  int
-	nearChunkSize int
+	conn              *net.TCPConn
+	chunks            list.List
+	farChunkSize      int
+	nearChunkSize     int
+	farAckWindowSize  uint32
+	nearAckWindowSize uint32
+	bwLimitType       byte
 
 	Agent             string
 	Application       string
@@ -85,8 +93,8 @@ type stats struct {
 type statsToAdmin struct {
 	connectTime float64
 
-	bytesIn  int
-	bytesOut int
+	bytesIn  uint32
+	bytesOut uint32
 
 	msgIn      int
 	msgOut     int
@@ -114,6 +122,8 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	nc.FarID = strconv.Itoa(farID)
 	nc.Instance = "_definst_"
 	nc.ObjectEncoding = AMF.AMF0
+	nc.ReadAccess = "/"
+	nc.WriteAccess = "/"
 	nc.AudioSampleAccess = "/"
 	nc.VideoSampleAccess = "/"
 
@@ -244,6 +254,8 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 		}
 	}
 
+	this.bytesOut += uint32(h.Length)
+
 	return h.Length, nil
 }
 
@@ -255,6 +267,8 @@ func (this *NetConnection) WaitRequest() error {
 		if err != nil {
 			return err
 		}
+
+		this.bytesIn += uint32(n)
 
 		err = this.parseChunk(b[:n], n)
 		if err != nil {
@@ -289,6 +303,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 			c.Fmt = (b[i] >> 6) & 0xFF
 			c.CSID = uint32(b[i]) & 0x3F
 
+			this.extendsFromPrecedingChunk(c)
 			if c.Fmt == 3 && c.Extended == false {
 				c.State = States.DATA
 			} else {
@@ -439,7 +454,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.EXTENDED_TIMESTAMP_3:
 			fallthrough
 		case States.DATA:
-			n := int(c.MessageLength) - c.Data.Len()
+			n := c.MessageLength - c.Data.Len()
 			if n > size-i {
 				n = size - i
 			}
@@ -454,9 +469,9 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 			i += n - 1
 
-			if c.Data.Len() < int(c.MessageLength) {
+			if c.Data.Len() < c.MessageLength {
 				c.State = States.START
-			} else if c.Data.Len() == int(c.MessageLength) {
+			} else if c.Data.Len() == c.MessageLength {
 				c.State = States.COMPLETE
 
 				err := this.parseMessage(c)
@@ -480,24 +495,116 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 }
 
 func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
+	fmt.Printf("onMessage: 0x%02x.\n", c.MessageTypeID)
+
 	b := c.Data.Bytes()
 	size := c.Data.Len()
 
 	switch c.MessageTypeID {
 	case Types.SET_CHUNK_SIZE:
+		this.farChunkSize = int(binary.BigEndian.Uint32(b) & 0x7FFFFFFF)
+		fmt.Printf("Set farChunkSize to %d.\n", this.farChunkSize)
+
 	case Types.ABORT:
+		csid := binary.BigEndian.Uint32(b)
+		fmt.Printf("Abort chunk stream %d.\n", csid)
+
+		element := this.chunks.Back()
+		if element != nil {
+			c := element.Value.(*Chunk.Chunk)
+			if c.State != States.COMPLETE && c.CSID == csid {
+				this.chunks.Remove(element)
+				fmt.Printf("Removed uncomplete chunk %d.\n", csid)
+			}
+		}
+
 	case Types.ACK:
+		sequenceNumber := binary.BigEndian.Uint32(b)
+		fmt.Printf("Sequence Number: %d, Bytes out: %d.\n", sequenceNumber, this.bytesOut)
+
+		if sequenceNumber != this.bytesOut {
+			fmt.Printf("Should I close the connection?\n")
+		}
+
 	case Types.USER_CONTROL:
-	case Types.ACK_SIZE:
+		m, _ := UserControlMessage.New()
+		m.Header.Timestamp = c.Timestamp
+		m.Header.StreamID = c.MessageStreamID
+
+		err := m.Parse(b, 0, size)
+		if err != nil {
+			return err
+		}
+
+		err = this.onUserControl(m)
+		if err != nil {
+			return err
+		}
+
+	case Types.ACK_WINDOW_SIZE:
+		this.farAckWindowSize = binary.BigEndian.Uint32(b)
+		fmt.Printf("Set farAckWindowSize to %d.\n", this.farAckWindowSize)
+
 	case Types.BANDWIDTH:
+		m, _ := BandwidthMessage.New()
+		m.Header.Timestamp = c.Timestamp
+		m.Header.StreamID = c.MessageStreamID
+
+		err := m.Parse(b, 0, size)
+		if err != nil {
+			return err
+		}
+
+		err = this.onBandwidth(m)
+		if err != nil {
+			return err
+		}
+
 	case Types.EDGE:
+		// TODO:
+
 	case Types.AUDIO:
+		m, _ := AudioMessage.New()
+		m.Header.Timestamp = c.Timestamp
+		m.Header.StreamID = c.MessageStreamID
+
+		err := m.Parse(b, 0, size)
+		if err != nil {
+			return err
+		}
+
+		err = this.onAudio(m)
+		if err != nil {
+			return err
+		}
+
 	case Types.VIDEO:
+		m, _ := VideoMessage.New()
+		m.Header.Timestamp = c.Timestamp
+		m.Header.StreamID = c.MessageStreamID
+
+		err := m.Parse(b, 0, size)
+		if err != nil {
+			return err
+		}
+
+		err = this.onVideo(m)
+		if err != nil {
+			return err
+		}
+
 	case Types.AMF3_DATA:
-	case Types.AMF3_SHARED_OBJECT:
-	case Types.AMF3_COMMAND:
+		fallthrough
 	case Types.DATA:
+		// TODO:
+
+	case Types.AMF3_SHARED_OBJECT:
+		fallthrough
 	case Types.SHARED_OBJECT:
+		// TODO:
+
+	case Types.AMF3_COMMAND:
+		fallthrough
 	case Types.COMMAND:
 		m, _ := CommandMessage.New(this.ObjectEncoding)
 		m.Header.Timestamp = c.Timestamp
@@ -520,11 +627,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		}
 
 	case Types.AGGREGATE:
-		/*m, _ := Message.New()
-		m.Type = b[0]
-		m.Length = uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
-		m.Timestamp = binary.BigEndian.Uint32(b[4:8])
-		m.StreamID = uint32(b[8])<<16 | uint32(b[9])<<8 | uint32(b[10])*/
+		// TODO:
 
 	default:
 	}
@@ -532,7 +635,67 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 	return nil
 }
 
+func (this *NetConnection) onUserControl(m *UserControlMessage.UserControlMessage) error {
+	fmt.Printf("onUserControl: %d.\n", m.Event.Type)
+
+	switch m.Event.Type {
+	case EventTypes.STREAM_BEGIN:
+		streamID := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Stream Begin: id=%d.\n", streamID)
+
+	case EventTypes.STREAM_EOF:
+		streamID := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Stream EOF: id=%d.\n", streamID)
+
+	case EventTypes.STREAM_DRY:
+		streamID := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Stream Dry: id=%d.\n", streamID)
+
+	case EventTypes.SET_BUFFER_LENGTH:
+		streamID := binary.BigEndian.Uint32(m.Event.Data)
+		bufferLength := binary.BigEndian.Uint32(m.Event.Data[4:])
+		fmt.Printf("Set Buffer Length: id=%d, len=%dms.\n", streamID, bufferLength)
+
+	case EventTypes.STREAM_IS_RECORDED:
+		streamID := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Stream is Recorded: id=%d.\n", streamID)
+
+	case EventTypes.PING_REQUEST:
+		timestamp := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Ping Request: timestamp=%d.\n", timestamp)
+
+	case EventTypes.PING_RESPONSE:
+		timestamp := binary.BigEndian.Uint32(m.Event.Data)
+		fmt.Printf("Ping Response: timestamp=%d.\n", timestamp)
+
+	default:
+	}
+
+	return nil
+}
+
+func (this *NetConnection) onBandwidth(m *BandwidthMessage.BandwidthMessage) error {
+	fmt.Printf("onBandwidth: ack=%d, limit=%d.\n", m.AckWindowSize, m.LimitType)
+
+	this.nearAckWindowSize = m.AckWindowSize
+	this.bwLimitType = m.LimitType
+
+	return nil
+}
+
+func (this *NetConnection) onAudio(m *AudioMessage.AudioMessage) error {
+	fmt.Printf("onAudio: id=%d, timstamp=%d, length=%d.\n", m.StreamID, m.Timestamp, m.Length)
+	return nil
+}
+
+func (this *NetConnection) onVideo(m *VideoMessage.VideoMessage) error {
+	fmt.Printf("onVideo: id=%d, timstamp=%d, length=%d.\n", m.StreamID, m.Timestamp, m.Length)
+	return nil
+}
+
 func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
+	fmt.Printf("onCommand: %s.\n", m.Name.Data)
+
 	var encoder AMF.Encoder
 
 	switch m.Name.Data {
@@ -631,7 +794,9 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		encoder.EncodeNumber(math.Float64frombits(m.TransactionID))
 		encoder.EncodeNull()
 
-		if err != nil {
+		if err == nil {
+			encoder.EncodeNumber(math.Float64frombits(m.StreamID))
+		} else {
 			var info AMF.AMFObject
 			info.Init()
 			info.Data.PushBack(&AMF.AMFValue{
@@ -644,9 +809,12 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 				Key:  "code",
 				Data: err.Error(),
 			})
+			info.Data.PushBack(&AMF.AMFValue{
+				Type: AMFTypes.STRING,
+				Key:  "description",
+				Data: err.Error(),
+			})
 			encoder.EncodeObject(&info)
-		} else {
-			encoder.EncodeNumber(math.Float64frombits(m.StreamID))
 		}
 
 	// NetStream Commands
@@ -673,6 +841,34 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 	if err != nil {
 		return err
 	}
+
+	//fmt.Println(b)
+
+	return nil
+}
+
+func (this *NetConnection) setChunkSize(size int) error {
+	var encoder AMF.Encoder
+	encoder.AppendInt32(int32(size), false)
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	var h = Message.Header{
+		Type:      Types.SET_CHUNK_SIZE,
+		Length:    len(b),
+		Timestamp: 0,
+		StreamID:  0,
+	}
+
+	_, err = this.WriteByChunk(b, CSIDs.PROTOCOL_CONTROL, &h)
+	if err != nil {
+		return err
+	}
+
+	this.nearChunkSize = size
 
 	return nil
 }
@@ -713,22 +909,48 @@ func (this *NetConnection) Close() error {
 }
 
 func (this *NetConnection) getUncompleteChunk() *Chunk.Chunk {
-	var chunk *Chunk.Chunk
-	var extended bool
-
-	element := this.chunks.Back()
-	if element != nil {
-		chunk = element.Value.(*Chunk.Chunk)
-
-		if chunk.State != States.COMPLETE {
-			return chunk
+	for e := this.chunks.Back(); e != nil; e = e.Prev() {
+		c := e.Value.(*Chunk.Chunk)
+		if c.State != States.COMPLETE {
+			return c
 		}
 
-		extended = chunk.Extended
+		break
 	}
 
-	chunk, _ = Chunk.New(extended)
-	this.chunks.PushBack(chunk)
+	c, _ := Chunk.New()
+	this.chunks.PushBack(c)
 
-	return chunk
+	return c
+}
+
+func (this *NetConnection) extendsFromPrecedingChunk(c *Chunk.Chunk) {
+	if c.Fmt == 0 {
+		return
+	}
+
+	for e, checking := this.chunks.Back(), false; e != nil; e = e.Prev() {
+		b := e.Value.(*Chunk.Chunk)
+		if b.CSID != c.CSID {
+			continue
+		}
+
+		if checking == false {
+			checking = true
+			continue
+		}
+
+		if c.Fmt >= 1 {
+			c.MessageStreamID = b.MessageStreamID
+		}
+		if c.Fmt >= 2 {
+			c.MessageLength = b.MessageLength
+			c.MessageTypeID = b.MessageTypeID
+		}
+		if c.Fmt == 3 {
+			c.Timestamp = b.Timestamp
+		}
+
+		break
+	}
 }

@@ -11,8 +11,15 @@ type AudioMessage struct {
 }
 
 func New() (*AudioMessage, error) {
-	var msg AudioMessage
-	msg.Type = Types.AUDIO
+	var m AudioMessage
+	m.Type = Types.AUDIO
 
-	return &msg, nil
+	return &m, nil
+}
+
+func (this *AudioMessage) Parse(b []byte, offset int, size int) error {
+	this.Length = size
+	this.Payload = b[offset : offset+size]
+
+	return nil
 }

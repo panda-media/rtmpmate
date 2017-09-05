@@ -15,6 +15,6 @@ type Header struct {
 }
 
 func New() (*Message, error) {
-	var msg Message
-	return &msg, nil
+	var m Message
+	return &m, nil
 }

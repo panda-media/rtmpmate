@@ -1,8 +1,8 @@
 package SharedObjectMessage
 
 import (
+	"container/list"
 	"rtmpmate.com/net/rtmp/Message"
-	"rtmpmate.com/net/rtmp/Message/SharedObjectMessage/Event"
 	"rtmpmate.com/net/rtmp/Message/Types"
 	"rtmpmate.com/util/AMF"
 )
@@ -13,17 +13,17 @@ type SharedObjectMessage struct {
 	Name    AMF.AMFString
 	Version byte
 	Flags   uint8
-	Events  []Event.Event
+	Events  list.List
 }
 
-func New(version byte) (*SharedObjectMessage, error) {
-	var msg SharedObjectMessage
+func New(encoding byte) (*SharedObjectMessage, error) {
+	var m SharedObjectMessage
 
-	if version == AMF.AMF0 {
-		msg.Type = Types.DATA
+	if encoding == AMF.AMF0 {
+		m.Type = Types.DATA
 	} else {
-		msg.Type = Types.AMF3_DATA
+		m.Type = Types.AMF3_DATA
 	}
 
-	return &msg, nil
+	return &m, nil
 }

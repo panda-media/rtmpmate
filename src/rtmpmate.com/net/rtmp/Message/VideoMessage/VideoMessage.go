@@ -11,8 +11,15 @@ type VideoMessage struct {
 }
 
 func New() (*VideoMessage, error) {
-	var msg VideoMessage
-	msg.Type = Types.VIDEO
+	var m VideoMessage
+	m.Type = Types.VIDEO
 
-	return &msg, nil
+	return &m, nil
+}
+
+func (this *VideoMessage) Parse(b []byte, offset int, size int) error {
+	this.Length = size
+	this.Payload = b[offset : offset+size]
+
+	return nil
 }

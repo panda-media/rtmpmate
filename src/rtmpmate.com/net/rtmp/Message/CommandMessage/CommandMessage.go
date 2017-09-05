@@ -32,15 +32,15 @@ type CommandMessage struct {
 }
 
 func New(encoding byte) (*CommandMessage, error) {
-	var msg CommandMessage
+	var m CommandMessage
 
 	if encoding == AMF.AMF0 {
-		msg.Type = Types.COMMAND
+		m.Type = Types.COMMAND
 	} else {
-		msg.Type = Types.AMF3_COMMAND
+		m.Type = Types.AMF3_COMMAND
 	}
 
-	return &msg, nil
+	return &m, nil
 }
 
 func (this *CommandMessage) Parse(b []byte, offset int, size int) error {

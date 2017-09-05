@@ -373,6 +373,11 @@ type Encoder struct {
 	buffer bytes.Buffer
 }
 
+func (this *Encoder) AppendBytes(b []byte) error {
+	_, err := this.buffer.Write(b)
+	return err
+}
+
 func (this *Encoder) AppendInt8(n int8) error {
 	return this.buffer.WriteByte(byte(n))
 }
@@ -393,20 +398,6 @@ func (this *Encoder) AppendInt16(n int16, littleEndian bool) error {
 
 	return nil
 }
-
-/*func (this *Encoder) AppendInt24(n int32, littleEndian bool) error {
-	if littleEndian {
-		this.buffer.WriteByte(byte(n & 0xFF))
-		this.buffer.WriteByte(byte((n >> 8) & 0xFF))
-		this.buffer.WriteByte(byte((n >> 16) & 0xFF))
-	} else {
-		this.buffer.WriteByte(byte((n >> 16) & 0xFF))
-		this.buffer.WriteByte(byte((n >> 8) & 0xFF))
-		this.buffer.WriteByte(byte(n & 0xFF))
-	}
-
-	return nil
-}*/
 
 func (this *Encoder) AppendInt32(n int32, littleEndian bool) error {
 	var order binary.ByteOrder

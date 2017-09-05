@@ -1,19 +1,19 @@
 package AggregateMessage
 
 import (
+	"container/list"
 	"rtmpmate.com/net/rtmp/Message"
-	"rtmpmate.com/net/rtmp/Message/AggregateMessage/Body"
 	"rtmpmate.com/net/rtmp/Message/Types"
 )
 
 type AggregateMessage struct {
 	Message.Header
-	Body []Body.Body
+	Body list.List
 }
 
 func New(version byte) (*AggregateMessage, error) {
-	var msg AggregateMessage
-	msg.Type = Types.AGGREGATE
+	var m AggregateMessage
+	m.Type = Types.AGGREGATE
 
-	return &msg, nil
+	return &m, nil
 }

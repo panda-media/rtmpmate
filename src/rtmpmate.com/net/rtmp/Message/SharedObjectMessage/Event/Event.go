@@ -10,6 +10,6 @@ type Event struct {
 }
 
 func New() (*Event, error) {
-	var msg Event
-	return &msg, nil
+	var e Event
+	return &e, nil
 }

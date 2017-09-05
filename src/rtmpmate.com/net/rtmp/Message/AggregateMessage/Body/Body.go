@@ -9,3 +9,8 @@ type Body struct {
 	Data []byte
 	Size uint
 }
+
+func (this *Body) New() (*Body, error) {
+	var b Body
+	return &b, nil
+}

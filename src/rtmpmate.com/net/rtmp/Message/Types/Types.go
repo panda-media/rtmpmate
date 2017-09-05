@@ -7,7 +7,7 @@ const (
 	ABORT              byte = 2
 	ACK                byte = 3
 	USER_CONTROL       byte = 4
-	ACK_SIZE           byte = 5
+	ACK_WINDOW_SIZE    byte = 5
 	BANDWIDTH          byte = 6
 	EDGE               byte = 7
 	AUDIO              byte = 8
