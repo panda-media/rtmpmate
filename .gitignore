@@ -1,0 +1,7 @@
+bin/
+pkg/
+.project
+.vscode/
+.vs/
+debug
+
