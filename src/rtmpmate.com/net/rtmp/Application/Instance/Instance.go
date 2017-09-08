@@ -1,16 +1,16 @@
 package Instance
 
 import (
-	"rtmpmate.com/net/rtmp/NetConnection"
-	"rtmpmate.com/net/rtmp/Stream"
 	"sync"
+	"syscall"
 )
 
 type Instance struct {
-	Name           string
-	connections    map[string]*NetConnection.NetConnection
+	Name string
+
+	connections    map[string]interface{}
 	connectionsMtx sync.RWMutex
-	streams        map[string]*Stream.Stream
+	streams        map[string]interface{}
 	streamsMtx     sync.RWMutex
 
 	statsToAdmin
@@ -57,24 +57,60 @@ func New(name string) (*Instance, error) {
 
 	var inst Instance
 	inst.Name = name
-	inst.connections = make(map[string]*NetConnection.NetConnection)
-	inst.streams = make(map[string]*Stream.Stream)
+	inst.connections = make(map[string]interface{})
+	inst.streams = make(map[string]interface{})
 
 	return &inst, nil
 }
 
+func (this *Instance) GetConnection(id string) (interface{}, error) {
+	if id == "" {
+		return nil, syscall.EINVAL
+	}
+
+	this.connectionsMtx.Lock()
+	nc, _ := this.connections[id]
+	this.connectionsMtx.Unlock()
+
+	return nc, nil
+}
+
+func (this *Instance) GetStream(name string, start float64) (interface{}, error) {
+	if name == "" {
+		return nil, syscall.EINVAL
+	}
+
+	this.streamsMtx.Lock()
+	s, _ := this.streams[name]
+	this.streamsMtx.Unlock()
+
+	return s, nil
+}
+
+func (this *Instance) AddConnection(id string, nc interface{}) {
+	this.connectionsMtx.Lock()
+	this.connections[id] = nc
+	this.connectionsMtx.Unlock()
+}
+
+func (this *Instance) RemoveConnection(id string) {
+	this.connectionsMtx.Lock()
+	this.connections[id] = nil
+	this.connectionsMtx.Unlock()
+}
+
+func (this *Instance) AddStream(name string, s interface{}) {
+	this.streamsMtx.Lock()
+	this.streams[name] = s
+	this.streamsMtx.Unlock()
+}
+
+func (this *Instance) RemoveStream(name string) {
+	this.streamsMtx.Lock()
+	this.streams[name] = nil
+	this.streamsMtx.Unlock()
+}
+
 func (this *Instance) GetStats() *stats {
 	return &this.stats
-}
-
-func (this *Instance) OnConnect(nc *NetConnection.NetConnection) {
-	this.connectionsMtx.Lock()
-	this.connections[nc.FarID] = nc
-	this.connectionsMtx.Unlock()
-}
-
-func (this *Instance) OnDisconnect(nc *NetConnection.NetConnection) {
-	this.connectionsMtx.Lock()
-	this.connections[nc.FarID] = nil
-	this.connectionsMtx.Unlock()
 }

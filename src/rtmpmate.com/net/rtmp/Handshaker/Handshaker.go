@@ -66,7 +66,7 @@ func New(conn *net.TCPConn) (*Handshaker, error) {
 }
 
 func (this *Handshaker) Shake() error {
-	data, err := this.Conn.Read(1+PACKET_SIZE, false)
+	data, err := this.Conn.Read(1 + PACKET_SIZE)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// C2
-	c2, err := this.Conn.Read(PACKET_SIZE, false)
+	c2, err := this.Conn.Read(PACKET_SIZE)
 	if err != nil {
 		return err
 	}
@@ -196,7 +196,7 @@ func (this *Handshaker) complexHandshake(c1 []byte) error {
 	}
 
 	// recv C2
-	c2, err := this.Conn.Read(PACKET_SIZE, false)
+	c2, err := this.Conn.Read(PACKET_SIZE)
 	if err != nil {
 		return err
 	}

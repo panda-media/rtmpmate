@@ -57,6 +57,16 @@ func (this *EventDispatcher) RemoveEventListener(event string, handler interface
 	fmt.Printf("Removed event: %s, len: %d, cap: %d.\n", event, len(listeners), cap(listeners))
 }
 
+func (this *EventDispatcher) HasEventListener(event string) bool {
+	listeners, _ := this.listeners[event]
+
+	if listeners == nil || len(listeners) == 0 {
+		return false
+	}
+
+	return true
+}
+
 func (this *EventDispatcher) DispatchEvent(event interface{}) {
 	defer func() {
 		if err := recover(); err != nil {

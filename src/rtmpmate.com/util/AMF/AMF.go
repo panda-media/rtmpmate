@@ -707,3 +707,11 @@ func (this *Encoder) EncodeValue(v *AMFValue) error {
 
 	return nil
 }
+
+func (this *Encoder) Len() int {
+	return this.buffer.Len()
+}
+
+func (this *Encoder) Reset() {
+	this.buffer.Reset()
+}

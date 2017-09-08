@@ -8,10 +8,12 @@ import (
 	"net"
 	"regexp"
 	"rtmpmate.com/events"
+	"rtmpmate.com/events/CommandEvent"
 	"rtmpmate.com/events/Event"
-	"rtmpmate.com/events/NetStatusEvent"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
+	"rtmpmate.com/net/rtmp/Application"
+	"rtmpmate.com/net/rtmp/Application/Instance"
 	"rtmpmate.com/net/rtmp/Chunk"
 	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
@@ -26,6 +28,9 @@ import (
 	"rtmpmate.com/net/rtmp/Message/UserControlMessage"
 	EventTypes "rtmpmate.com/net/rtmp/Message/UserControlMessage/Event/Types"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
+	"rtmpmate.com/net/rtmp/Responder"
+	"rtmpmate.com/net/rtmp/Stream"
+	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
 	"rtmpmate.com/util/AMF"
 	AMFTypes "rtmpmate.com/util/AMF/Types"
 	"strconv"
@@ -38,21 +43,27 @@ var (
 )
 
 type NetConnection struct {
+	AppName           string
+	bwLimitType       byte
 	conn              *net.TCPConn
 	chunks            list.List
-	farChunkSize      int
-	nearChunkSize     int
 	farAckWindowSize  uint32
+	farChunkSize      int
+	InstName          string
 	nearAckWindowSize uint32
-	bwLimitType       byte
+	nearChunkSize     int
+	receiveAudio      bool
+	receiveVideo      bool
+	responders        map[int]*Responder.Responder
+	stream            *Stream.Stream
 
 	Agent             string
-	Application       string
+	Application       *Application.Application
 	AudioCodecs       uint64
 	AudioSampleAccess string
 	Connected         bool
 	FarID             string
-	Instance          string
+	Instance          *Instance.Instance
 	IP                string
 	NearID            string
 	ObjectEncoding    byte
@@ -105,12 +116,6 @@ type statsToAdmin struct {
 	msgDropped int
 }
 
-type Responder struct {
-	ID     uint64
-	Result func()
-	Status func()
-}
-
 func New(conn *net.TCPConn) (*NetConnection, error) {
 	if conn == nil {
 		return nil, syscall.EINVAL
@@ -122,26 +127,27 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	nc.conn = conn
 	nc.farChunkSize = 128
 	nc.nearChunkSize = 128
+	nc.responders = make(map[int]*Responder.Responder)
 
 	nc.FarID = strconv.Itoa(farID)
-	nc.Instance = "_definst_"
+	nc.InstName = "_definst_"
 	nc.ObjectEncoding = AMF.AMF0
+
+	nc.ReadAccess = "/"
+	nc.WriteAccess = "/"
+	nc.AudioSampleAccess = "/"
+	nc.VideoSampleAccess = "/"
 
 	return &nc, nil
 }
 
-func (this *NetConnection) Read(size int, once bool) ([]byte, error) {
+func (this *NetConnection) Read(size int) ([]byte, error) {
 	var b = make([]byte, size)
-	var err error
 
-	for n, pos := 0, 0; pos < size; {
-		n, err = this.conn.Read(b[pos:])
+	for pos := 0; pos < size; {
+		n, err := this.conn.Read(b[pos:])
 		if err != nil {
 			return nil, err
-		}
-
-		if once {
-			return b[:n], nil
 		}
 
 		pos += n
@@ -258,6 +264,8 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 
 func (this *NetConnection) WaitRequest() error {
 	var b = make([]byte, 4096)
+
+	this.AddEventListener(CommandEvent.CONNECT, this.onConnect, 0)
 
 	for {
 		n, err := this.conn.Read(b)
@@ -624,10 +632,12 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 			return err
 		}
 
-		encoding, _ := m.CommandObject.Get("objectEncoding")
-		if encoding != nil && encoding.Data.(float64) != 0 {
-			this.ObjectEncoding = AMF.AMF3
-			m.Type = Types.AMF3_COMMAND
+		if m.CommandObject != nil {
+			encoding, _ := m.CommandObject.Get("objectEncoding")
+			if encoding != nil && encoding.Data.(float64) != 0 {
+				this.ObjectEncoding = AMF.AMF3
+				m.Type = Types.AMF3_COMMAND
+			}
 		}
 
 		err = this.onCommand(m)
@@ -715,32 +725,21 @@ func (this *NetConnection) onVideo(m *VideoMessage.VideoMessage) error {
 }
 
 func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
-	fmt.Printf("onCommand: name=%s.\n", m.Name.Data)
+	fmt.Printf("onCommand: name=%s.\n", m.Name)
 
 	var encoder AMF.Encoder
 
-	switch m.Name.Data {
-	// NetConnection Commands
-	case Commands.CONNECT:
-		this.onConnect(m, &encoder)
+	if this.HasEventListener(m.Name) {
+		this.DispatchEvent(CommandEvent.New(m.Name, this, m, &encoder))
+	} else {
+		// Should not return error, this might be an user call
+		fmt.Printf("No handler found of event \"%s\".\n", m.Name)
+		return nil
+	}
 
-	case Commands.CLOSE:
-		// TODO:
-
-	case Commands.CREATE_STREAM:
-		this.onCreateStream(m, &encoder)
-
-	// NetStream Commands
-	case Commands.PLAY:
-	case Commands.PLAY2:
-	case Commands.DELETE_STREAM:
-	case Commands.CLOSE_STREAM:
-	case Commands.RECEIVE_AUDIO:
-	case Commands.RECEIVE_VIDEO:
-	case Commands.PUBLISH:
-	case Commands.SEEK:
-	case Commands.PAUSE:
-	default:
+	m.Length = encoder.Len()
+	if m.Length == 0 {
+		return nil
 	}
 
 	b, err := encoder.Encode()
@@ -748,52 +747,72 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		return err
 	}
 
-	m.Length = len(b)
-
 	_, err = this.WriteByChunk(b, CSIDs.COMMAND, &m.Header)
 	if err != nil {
 		return err
 	}
 
-	//fmt.Println(b)
-
 	return nil
 }
 
-func (this *NetConnection) onConnect(m *CommandMessage.CommandMessage, encoder *AMF.Encoder) error {
+func (this *NetConnection) onConnect(e *CommandEvent.CommandEvent) {
 	if this.Connected {
-		return fmt.Errorf("already connected")
+		fmt.Printf("Already connected.\n")
+		return
 	}
 
 	// Init properties
-	this.ReadAccess = "/"
-	this.WriteAccess = "/"
-	this.AudioSampleAccess = "/"
-	this.VideoSampleAccess = "/"
-
-	app, _ := m.CommandObject.Get("app")
+	app, _ := e.Message.CommandObject.Get("app")
 	if app != nil {
-		this.Application = app.Data.(string)
+		this.AppName = app.Data.(string)
 	}
 
-	tcUrl, _ := m.CommandObject.Get("tcUrl")
+	tcUrl, _ := e.Message.CommandObject.Get("tcUrl")
 	if tcUrl != nil {
 		arr := urlRe.FindStringSubmatch(tcUrl.Data.(string))
 		if arr != nil {
 			inst := arr[len(arr)-1]
 			if inst != "" {
-				this.Instance = inst
+				this.InstName = inst
 			}
 		}
 	}
 
-	this.AddEventListener(NetStatusEvent.NET_STATUS, this.OnStatus, 0)
-	this.AddEventListener("checkBandwidth", this.CheckBandwidth, 0)
-	this.AddEventListener("getStats", this.GetStats, 0)
-
 	// Encode response
-	encoder.EncodeString(Commands.RESULT)
-	encoder.EncodeNumber(1)
+	var command, level, code string
+
+	if this.ReadAccess == "/" || this.ReadAccess == "/"+this.AppName {
+		this.Application, _ = Application.Get(this.AppName)
+		this.Instance, _ = this.Application.GetInstance(this.InstName)
+		this.Instance.AddConnection(this.FarID, this)
+
+		this.AddEventListener(CommandEvent.CLOSE, this.onClose, 0)
+		this.AddEventListener(CommandEvent.CREATE_STREAM, this.onCreateStream, 0)
+		this.AddEventListener(CommandEvent.RESULT, this.onResult, 0)
+		this.AddEventListener(CommandEvent.ERROR, this.onError, 0)
+		this.AddEventListener(CommandEvent.PLAY, this.onPlay, 0)
+		this.AddEventListener(CommandEvent.PLAY2, this.onPlay2, 0)
+		this.AddEventListener(CommandEvent.DELETE_STREAM, this.onDeleteStream, 0)
+		this.AddEventListener(CommandEvent.CLOSE_STREAM, this.onCloseStream, 0)
+		this.AddEventListener(CommandEvent.RECEIVE_AUDIO, this.onReceiveAV, 0)
+		this.AddEventListener(CommandEvent.RECEIVE_VIDEO, this.onReceiveAV, 0)
+		this.AddEventListener(CommandEvent.PUBLISH, this.onPublish, 0)
+		this.AddEventListener(CommandEvent.SEEK, this.onSeek, 0)
+		this.AddEventListener(CommandEvent.PAUSE, this.onPause, 0)
+		this.AddEventListener(CommandEvent.CHECK_BANDWIDTH, this.onCheckBandwidth, 0)
+		this.AddEventListener(CommandEvent.GET_STATS, this.onGetStats, 0)
+
+		command = Commands.RESULT
+		level = Level.STATUS
+		code = Code.NETCONNECTION_CONNECT_SUCCESS
+	} else {
+		command = Commands.ERROR
+		level = Level.ERROR
+		code = Code.NETCONNECTION_CONNECT_REJECTED
+	}
+
+	e.Encoder.EncodeString(command)
+	e.Encoder.EncodeNumber(1)
 
 	var prop AMF.AMFObject
 	prop.Init()
@@ -812,86 +831,251 @@ func (this *NetConnection) onConnect(m *CommandMessage.CommandMessage, encoder *
 		Key:  "mode",
 		Data: float64(1),
 	})
-	encoder.EncodeObject(&prop)
+	e.Encoder.EncodeObject(&prop)
 
-	var info AMF.AMFObject
-	info.Init()
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Key:  "level",
-		Data: Level.STATUS,
-	})
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Key:  "code",
-		Data: Code.NETCONNECTION_CONNECT_SUCCESS,
-	})
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Key:  "description",
-		Data: "Connection succeeded.",
-	})
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.DOUBLE,
-		Key:  "objectEncoding",
-		Data: float64(this.ObjectEncoding),
-	})
 	var data list.List
 	data.PushBack(&AMF.AMFValue{
 		Type: AMFTypes.STRING,
 		Key:  "version",
 		Data: "5,0,3,3029",
 	})
+
+	info, _ := this.getInfoObject(level, code, "Connection succeeded")
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.DOUBLE,
+		Key:  "objectEncoding",
+		Data: float64(this.ObjectEncoding),
+	})
 	info.Data.PushBack(&AMF.AMFValue{
 		Type: AMFTypes.ECMA_ARRAY,
 		Key:  "data",
 		Data: data,
 	})
-	encoder.EncodeObject(&info)
+	e.Encoder.EncodeObject(info)
 
+	// TODO: reject
 	this.Connected = true
-
-	return nil
 }
 
-func (this *NetConnection) onCreateStream(m *CommandMessage.CommandMessage, encoder *AMF.Encoder) error {
-	var err error
+func (this *NetConnection) onClose(e *CommandEvent.CommandEvent) {
+	this.Close()
+}
 
-	if (this.ReadAccess == "/" || this.ReadAccess == "/"+this.Application) &&
-		(this.WriteAccess == "/" || this.WriteAccess == "/"+this.Application) {
-		encoder.EncodeString(Commands.RESULT)
+func (this *NetConnection) onCreateStream(e *CommandEvent.CommandEvent) {
+	var command, code, description string
+
+	if this.ReadAccess == "/" || this.ReadAccess == "/"+this.AppName {
+		this.stream, _ = Stream.New(1, "", StreamTypes.IDLE) // ID 0 is used as NetConnection
+		if this.stream != nil {
+			command = Commands.RESULT
+		} else {
+			command = Commands.ERROR
+			code = Code.NETSTREAM_FAILED
+			description = "Internal error"
+		}
 	} else {
-		err = fmt.Errorf("Access denied.")
-		encoder.EncodeString(Commands.ERROR)
+		// TODO: Test on AMS
+		command = Commands.ERROR
+		code = Code.NETSTREAM_PLAY_FAILED
+		description = "No read access"
 	}
 
-	encoder.EncodeNumber(math.Float64frombits(m.TransactionID))
-	encoder.EncodeNull()
+	e.Encoder.EncodeString(command)
+	e.Encoder.EncodeNumber(math.Float64frombits(e.Message.TransactionID))
+	e.Encoder.EncodeNull()
 
-	if err == nil {
-		encoder.EncodeNumber(math.Float64frombits(m.StreamID))
-	} else {
-		var info AMF.AMFObject
-		info.Init()
-		info.Data.PushBack(&AMF.AMFValue{
-			Type: AMFTypes.STRING,
-			Key:  "level",
-			Data: Level.ERROR,
-		})
-		info.Data.PushBack(&AMF.AMFValue{
-			Type: AMFTypes.STRING,
-			Key:  "code",
-			Data: err.Error(), // TODO: Test on AMS
-		})
-		info.Data.PushBack(&AMF.AMFValue{
-			Type: AMFTypes.STRING,
-			Key:  "description",
-			Data: err.Error(),
-		})
-		encoder.EncodeObject(&info)
+	if command == Commands.RESULT {
+		e.Encoder.EncodeNumber(float64(this.stream.ID))
+		return
 	}
 
-	return nil
+	// TODO: Test on AMS
+	info, _ := this.getInfoObject(Level.ERROR, code, description)
+	e.Encoder.EncodeObject(info)
+}
+
+func (this *NetConnection) onResult(e *CommandEvent.CommandEvent) {
+
+}
+
+func (this *NetConnection) onError(e *CommandEvent.CommandEvent) {
+
+}
+
+func (this *NetConnection) onPlay(e *CommandEvent.CommandEvent) {
+	var info *AMF.AMFObject
+
+	if this.ReadAccess == "/" || this.ReadAccess == "/"+this.AppName {
+		stream, _ := this.Instance.GetStream(e.Message.StreamName, e.Message.Start)
+		if stream == nil {
+			if e.Message.Start == -2 {
+				stream, _ = Stream.New(0, e.Message.StreamName, StreamTypes.PLAYING_LIVE)
+				if stream != nil {
+					this.Instance.AddStream(stream.(*Stream.Stream).Name, stream)
+				} else {
+					info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_FAILED, "Internal error")
+				}
+			} else {
+				info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_STREAMNOTFOUND, "Stream not found")
+			}
+		}
+
+		if stream != nil {
+			this.stream.Name = e.Message.StreamName
+			this.stream.Type = StreamTypes.PLAYING_LIVE
+
+			if e.Message.Reset {
+				info, _ := this.getInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
+
+				e.Encoder.EncodeString(Commands.ON_STATUS)
+				e.Encoder.EncodeNumber(0)
+				e.Encoder.EncodeNull()
+				e.Encoder.EncodeObject(info)
+
+				e.Message.Length = e.Encoder.Len()
+				b, _ := e.Encoder.Encode()
+				this.WriteByChunk(b, CSIDs.COMMAND, &e.Message.Header)
+
+				e.Encoder.Reset()
+			}
+
+			info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
+		}
+	} else {
+		info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_FAILED, "No read access")
+	}
+
+	e.Encoder.EncodeString(Commands.ON_STATUS)
+	e.Encoder.EncodeNumber(0)
+	e.Encoder.EncodeNull()
+	e.Encoder.EncodeObject(info)
+}
+
+func (this *NetConnection) onPlay2(e *CommandEvent.CommandEvent) {
+
+}
+
+func (this *NetConnection) onDeleteStream(e *CommandEvent.CommandEvent) {
+	this.stream = nil
+}
+
+func (this *NetConnection) onCloseStream(e *CommandEvent.CommandEvent) {
+	this.stream = nil
+}
+
+func (this *NetConnection) onReceiveAV(e *CommandEvent.CommandEvent) {
+	if e.Message.Name == CommandEvent.RECEIVE_AUDIO && this.receiveAudio ||
+		e.Message.Name == CommandEvent.RECEIVE_VIDEO && this.receiveVideo {
+		return
+	}
+
+	if e.Message.Flag {
+		info, _ := this.getInfoObject(Level.STATUS, Code.NETSTREAM_SEEK_NOTIFY, "Seek notify")
+
+		e.Encoder.EncodeString(Commands.ON_STATUS)
+		e.Encoder.EncodeNumber(0)
+		e.Encoder.EncodeNull()
+		e.Encoder.EncodeObject(info)
+
+		e.Message.Length = e.Encoder.Len()
+		b, _ := e.Encoder.Encode()
+		this.WriteByChunk(b, CSIDs.COMMAND, &e.Message.Header)
+
+		e.Encoder.Reset()
+
+		info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
+
+		e.Encoder.EncodeString(Commands.ON_STATUS)
+		e.Encoder.EncodeNumber(0)
+		e.Encoder.EncodeNull()
+		e.Encoder.EncodeObject(info)
+	}
+}
+
+func (this *NetConnection) onPublish(e *CommandEvent.CommandEvent) {
+	var info *AMF.AMFObject
+
+	if this.WriteAccess == "/" || this.WriteAccess == "/"+this.AppName {
+		stream, _ := this.Instance.GetStream(e.Message.PublishingName, -2)
+		if stream == nil || stream.(*Stream.Stream).Type != StreamTypes.PUBLISHING {
+			info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
+		} else {
+			info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_PUBLISH_BADNAME, "Publish bad name")
+		}
+
+		if stream == nil {
+			stream, _ = Stream.New(0, e.Message.PublishingName, StreamTypes.PUBLISHING)
+			if stream != nil {
+				this.Instance.AddStream(stream.(*Stream.Stream).Name, stream)
+			} else {
+				info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_FAILED, "Internal error")
+			}
+		}
+	} else {
+		// TODO: Test on AMS
+		info, _ = this.getInfoObject(Level.ERROR, "No write access", "No write access")
+	}
+
+	e.Encoder.EncodeString(Commands.ON_STATUS)
+	e.Encoder.EncodeNumber(0)
+	e.Encoder.EncodeNull()
+	e.Encoder.EncodeObject(info)
+}
+
+func (this *NetConnection) onSeek(e *CommandEvent.CommandEvent) {
+	var info *AMF.AMFObject
+
+	if this.stream.Type == StreamTypes.PLAYING_VOD {
+		if e.Message.MilliSeconds >= 0 && e.Message.MilliSeconds <= this.stream.Duration {
+			info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_SEEK_NOTIFY, "Seek notify")
+		} else {
+			info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_SEEK_INVALIDTIME, "Seek invalid time")
+		}
+	} else {
+		info, _ = this.getInfoObject(Level.ERROR, Code.NETSTREAM_SEEK_FAILED, "Seek failed")
+	}
+
+	e.Encoder.EncodeString(Commands.ON_STATUS)
+	e.Encoder.EncodeNumber(0)
+	e.Encoder.EncodeNull()
+	e.Encoder.EncodeObject(info)
+}
+
+func (this *NetConnection) onPause(e *CommandEvent.CommandEvent) {
+	var info *AMF.AMFObject
+
+	if e.Message.Pause {
+		if e.Message.MilliSeconds >= 0 && e.Message.MilliSeconds <= this.stream.Duration {
+			this.stream.Pause = e.Message.Pause
+			this.stream.CurrentTime = e.Message.MilliSeconds
+
+			info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_PAUSE_NOTIFY, "Pause notify")
+		} else {
+			info, _ = this.getInfoObject(Level.ERROR, "Pause invalid time", "Pause invalid time")
+		}
+	} else {
+		if e.Message.MilliSeconds >= 0 && e.Message.MilliSeconds <= this.stream.Duration {
+			this.stream.Pause = e.Message.Pause
+			this.stream.CurrentTime = e.Message.MilliSeconds
+
+			info, _ = this.getInfoObject(Level.STATUS, Code.NETSTREAM_UNPAUSE_NOTIFY, "Unpause notify")
+		} else {
+			info, _ = this.getInfoObject(Level.ERROR, "Unpause invalid time", "Unpause invalid time")
+		}
+	}
+
+	e.Encoder.EncodeString(Commands.ON_STATUS)
+	e.Encoder.EncodeNumber(0)
+	e.Encoder.EncodeNull()
+	e.Encoder.EncodeObject(info)
+}
+
+func (this *NetConnection) onCheckBandwidth(e *Event.Event) {
+
+}
+
+func (this *NetConnection) onGetStats(e *Event.Event) {
+
 }
 
 func (this *NetConnection) onData(m *DataMessage.DataMessage) error {
@@ -955,10 +1139,10 @@ func (this *NetConnection) CreateStream() error {
 	return nil
 }
 
-func (this *NetConnection) Call(methodName string, resultObj *Responder, args ...*AMF.AMFValue) error {
+func (this *NetConnection) Call(method string, res *Responder.Responder, args ...*AMF.AMFValue) error {
 	var encoder AMF.Encoder
-	encoder.EncodeString(methodName)
-	encoder.EncodeNumber(float64(resultObj.ID))
+	encoder.EncodeString(method)
+	encoder.EncodeNumber(float64(res.ID))
 
 	for _, v := range args {
 		encoder.EncodeValue(v)
@@ -974,20 +1158,31 @@ func (this *NetConnection) Call(methodName string, resultObj *Responder, args ..
 	return nil
 }
 
-func (this *NetConnection) OnStatus(e *NetStatusEvent.NetStatusEvent) {
-
-}
-
-func (this *NetConnection) CheckBandwidth(e *Event.Event) {
-
-}
-
-func (this *NetConnection) GetStats(e *Event.Event) {
-
-}
-
 func (this *NetConnection) Close() error {
 	return this.conn.Close()
+}
+
+func (this *NetConnection) getInfoObject(level string, code string, description string) (*AMF.AMFObject, error) {
+	var info AMF.AMFObject
+	info.Init()
+
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.STRING,
+		Key:  "level",
+		Data: level,
+	})
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.STRING,
+		Key:  "code",
+		Data: code,
+	})
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.STRING,
+		Key:  "description",
+		Data: description,
+	})
+
+	return &info, nil
 }
 
 func (this *NetConnection) getUncompleteChunk() *Chunk.Chunk {

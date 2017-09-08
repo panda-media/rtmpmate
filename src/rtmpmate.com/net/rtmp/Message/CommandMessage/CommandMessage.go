@@ -13,20 +13,20 @@ import (
 
 type CommandMessage struct {
 	Message.Header
-	Name          AMF.AMFString
+	Name          string
 	TransactionID uint64
 
 	CommandObject  *AMF.AMFObject
 	Arguments      *AMF.AMFObject
-	StreamName     *AMF.AMFString
+	Response       *AMF.AMFValue
+	StreamID       uint64
+	StreamName     string
 	Start          float64
 	Duration       float64
 	Reset          bool
-	Parameters     *AMF.AMFObject
-	StreamID       uint64
 	Flag           bool
-	PublishingName *AMF.AMFString
-	PublishingType *AMF.AMFString
+	PublishingName string
+	PublishingType string
 	MilliSeconds   float64
 	Pause          bool
 }
@@ -52,8 +52,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 	}
 
 	cost += v.Cost
-	this.Name.Data = v.Data.(string)
-	this.Name.Cost = v.Cost
+	this.Name = v.Data.(string)
 
 	v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 	if err != nil {
@@ -63,7 +62,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 	cost += v.Cost
 	this.TransactionID = math.Float64bits(v.Data.(float64))
 
-	switch this.Name.Data {
+	switch this.Name {
 	// NetConnection Commands
 	case Commands.CONNECT:
 		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
@@ -91,7 +90,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 	case Commands.CLOSE:
-		fmt.Printf("Parsing command %s.\n", this.Name.Data)
+		fmt.Printf("Parsing command %s.\n", this.Name)
 
 	case Commands.CREATE_STREAM:
 		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
@@ -105,10 +104,35 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 			Cost:    v.Cost,
 			Ended:   v.Ended,
 		}
-
 		if v.Type == AMFTypes.OBJECT {
 			this.CommandObject.Data = v.Data.(list.List)
 		}
+
+	case Commands.RESULT:
+		fallthrough
+	case Commands.ERROR:
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
+		if err != nil {
+			return err
+		}
+
+		cost += v.Cost
+		this.CommandObject = &AMF.AMFObject{
+			AMFHash: AMF.AMFHash{v.Hash},
+			Cost:    v.Cost,
+			Ended:   v.Ended,
+		}
+		if v.Type == AMFTypes.OBJECT {
+			this.CommandObject.Data = v.Data.(list.List)
+		}
+
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
+		if err != nil {
+			return err
+		}
+
+		cost += v.Cost
+		this.Response = v
 
 	// NetStream Commands
 	case Commands.PLAY:
@@ -126,34 +150,31 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		cost += v.Cost
-		this.StreamName = &AMF.AMFString{
-			Data: v.Data.(string),
-			Cost: v.Cost,
+		this.StreamName = v.Data.(string)
+
+		v, _ = AMF.DecodeValue(b, offset+cost, size-cost)
+		if v == nil {
+			this.Start = -2
+		} else {
+			cost += v.Cost
+			this.Start = v.Data.(float64)
 		}
 
-		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
-		if err != nil {
-			return err
+		v, _ = AMF.DecodeValue(b, offset+cost, size-cost)
+		if v == nil {
+			this.Duration = -1
+		} else {
+			cost += v.Cost
+			this.Duration = v.Data.(float64)
 		}
 
-		cost += v.Cost
-		this.Start = v.Data.(float64)
-
-		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
-		if err != nil {
-			return err
+		v, _ = AMF.DecodeValue(b, offset+cost, size-cost)
+		if v == nil {
+			this.Reset = true
+		} else {
+			cost += v.Cost
+			this.Reset = v.Data.(bool)
 		}
-
-		cost += v.Cost
-		this.Duration = v.Data.(float64)
-
-		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
-		if err != nil {
-			return err
-		}
-
-		cost += v.Cost
-		this.Reset = v.Data.(bool)
 
 	case Commands.PLAY2:
 		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
@@ -170,7 +191,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		cost += v.Cost
-		this.Parameters = &AMF.AMFObject{
+		this.Arguments = &AMF.AMFObject{
 			AMFHash: AMF.AMFHash{v.Hash},
 			Data:    v.Data.(list.List),
 			Cost:    v.Cost,
@@ -195,7 +216,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		this.StreamID = math.Float64bits(v.Data.(float64))
 
 	case Commands.CLOSE_STREAM:
-		fmt.Printf("Parsing command %s.\n", this.Name.Data)
+		fmt.Printf("Parsing command %s.\n", this.Name)
 
 	case Commands.RECEIVE_AUDIO:
 		fallthrough
@@ -231,10 +252,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		cost += v.Cost
-		this.PublishingName = &AMF.AMFString{
-			Data: v.Data.(string),
-			Cost: v.Cost,
-		}
+		this.PublishingName = v.Data.(string)
 
 		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
 		if err != nil {
@@ -242,10 +260,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 		}
 
 		cost += v.Cost
-		this.PublishingType = &AMF.AMFString{
-			Data: v.Data.(string),
-			Cost: v.Cost,
-		}
+		this.PublishingType = v.Data.(string)
 
 	case Commands.SEEK:
 		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
@@ -288,6 +303,28 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 
 		cost += v.Cost
 		this.MilliSeconds = v.Data.(float64)
+
+	case Commands.ON_STATUS:
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
+		if err != nil {
+			return err
+		}
+
+		cost += v.Cost
+		this.CommandObject = nil // v.Type == Types.NULL
+
+		v, err = AMF.DecodeValue(b, offset+cost, size-cost)
+		if err != nil {
+			return err
+		}
+
+		cost += v.Cost
+		this.Arguments = &AMF.AMFObject{
+			AMFHash: AMF.AMFHash{v.Hash},
+			Data:    v.Data.(list.List),
+			Cost:    v.Cost,
+			Ended:   v.Ended,
+		}
 
 	default:
 	}
