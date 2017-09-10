@@ -44,5 +44,5 @@ func (this *CommandEvent) Clone() *CommandEvent {
 }
 
 func (this *CommandEvent) ToString() string {
-	return fmt.Sprintf("[ErrorEvent type=%s message=%v encoder=%v]", this.Type, this.Message, this.Encoder)
+	return fmt.Sprintf("[CommandEvent type=%s message=%v encoder=%v]", this.Type, this.Message, this.Encoder)
 }

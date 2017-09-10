@@ -7,7 +7,8 @@ import (
 
 type VideoMessage struct {
 	Message.Header
-	Payload []byte
+	KeyFrame bool
+	Payload  []byte
 }
 
 func New() (*VideoMessage, error) {

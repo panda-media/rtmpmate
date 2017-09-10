@@ -10,6 +10,7 @@ type Chunk struct {
 	MessageHeader
 	Extended bool
 	Data     bytes.Buffer
+	Loaded   int
 	State    byte
 }
 

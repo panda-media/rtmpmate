@@ -27,6 +27,59 @@ func (this *AMFHash) Get(key string) (*AMFValue, error) {
 	return this.Hash[key], nil
 }
 
+func (this *AMFHash) ToString(depth int) string {
+	var b bytes.Buffer
+	b.WriteString("{")
+
+	for k, v := range this.Hash {
+		b.WriteString("\n" + string(bytes.Repeat([]byte("\t"), depth+1)) + k + ": ")
+
+		switch v.Type {
+		case Types.DOUBLE:
+			fallthrough
+		case Types.BOOLEAN:
+			fallthrough
+		case Types.STRING:
+			fallthrough
+		case Types.LONG_STRING:
+			fmt.Fprintf(&b, "%v", v.Data)
+
+		case Types.OBJECT:
+			fallthrough
+		case Types.ECMA_ARRAY:
+			s := this.ToString(depth + 1)
+			b.WriteString(s)
+
+		case Types.STRICT_ARRAY:
+			l := v.Data.(list.List)
+			b.WriteString("[")
+			for e := l.Front(); e != nil; e = e.Next() {
+				fmt.Fprintf(&b, "%v", e.Value)
+
+				if e.Next() != nil {
+					b.WriteString(", ")
+				}
+			}
+			b.WriteString("]")
+
+		case Types.NULL:
+			b.WriteString("null")
+
+		case Types.UNDEFINED:
+			b.WriteString("undefined")
+
+		case Types.DATE:
+			fmt.Fprintf(&b, "%v", v.Data)
+
+		default:
+		}
+	}
+
+	b.WriteString("\n" + string(bytes.Repeat([]byte("\t"), depth)) + "}")
+
+	return string(b.Bytes())
+}
+
 type AMFValue struct {
 	AMFHash
 	Type   byte

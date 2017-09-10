@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net"
 	"rtmpmate.com/net/rtmp/Handshaker/Types"
-	"rtmpmate.com/net/rtmp/NetConnection"
 	"syscall"
 )
 
@@ -43,7 +42,7 @@ var FMS_KEY = []byte{
 }
 
 type Handshaker struct {
-	Conn *NetConnection.NetConnection
+	conn *net.TCPConn
 	mode uint8
 }
 
@@ -52,34 +51,44 @@ func New(conn *net.TCPConn) (*Handshaker, error) {
 		return nil, syscall.EINVAL
 	}
 
-	client, err := NetConnection.New(conn)
-	if err != nil {
-		fmt.Printf("Failed to create client: %v.\n", err)
-		return nil, err
-	}
-
 	var shaker Handshaker
-	shaker.Conn = client
+	shaker.conn = conn
 	shaker.mode = Types.SIMPLE
 
 	return &shaker, nil
 }
 
+func (this *Handshaker) Read(b []byte) (int, error) {
+	size := len(b)
+
+	for pos := 0; pos < size; {
+		n, err := this.conn.Read(b[pos:])
+		if err != nil {
+			return pos, err
+		}
+
+		pos += n
+	}
+
+	return size, nil
+}
+
 func (this *Handshaker) Shake() error {
-	data, err := this.Conn.Read(1 + PACKET_SIZE)
+	var b = make([]byte, 1+PACKET_SIZE)
+	_, err := this.Read(b)
 	if err != nil {
 		return err
 	}
 
-	if data[0] != 0x03 {
-		return fmt.Errorf("Invalid handshake version: %d.\n", data[0])
+	if b[0] != 0x03 {
+		return fmt.Errorf("Invalid handshake version: %d.\n", b[0])
 	}
 
-	zero := binary.BigEndian.Uint32(data[5:9])
+	zero := binary.BigEndian.Uint32(b[5:9])
 	if zero == 0 {
-		err = this.simpleHandshake(data[1:])
+		err = this.simpleHandshake(b[1:])
 	} else {
-		err = this.complexHandshake(data[1:])
+		err = this.complexHandshake(b[1:])
 	}
 
 	/*if err != nil {
@@ -87,7 +96,7 @@ func (this *Handshaker) Shake() error {
 	}*/
 
 	// Handshake done
-	fmt.Printf("Handshake done: id=%s.\n", this.Conn.FarID)
+	fmt.Printf("Handshake done.\n")
 
 	return nil
 }
@@ -104,7 +113,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 		s01[i] = byte(rand.Int() % 256)
 	}
 
-	n, err := this.Conn.Write(s01)
+	n, err := this.conn.Write(s01)
 	if err != nil {
 		return err
 	}
@@ -114,7 +123,7 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// s2
-	n, err = this.Conn.Write(c1)
+	n, err = this.conn.Write(c1)
 	if err != nil {
 		return err
 	}
@@ -124,7 +133,8 @@ func (this *Handshaker) simpleHandshake(c1 []byte) error {
 	}
 
 	// C2
-	c2, err := this.Conn.Read(PACKET_SIZE)
+	var c2 = make([]byte, PACKET_SIZE)
+	_, err = this.Read(c2)
 	if err != nil {
 		return err
 	}
@@ -175,28 +185,29 @@ func (this *Handshaker) complexHandshake(c1 []byte) error {
 	s2 := s2Hash.Sum(nil)
 
 	// send S0 S1 S2
-	_, err = this.Conn.Write([]byte{0x03})
+	_, err = this.conn.Write([]byte{0x03})
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Conn.Write(s1)
+	_, err = this.conn.Write(s1)
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Conn.Write(s2Tmp)
+	_, err = this.conn.Write(s2Tmp)
 	if err != nil {
 		return err
 	}
 
-	_, err = this.Conn.Write(s2)
+	_, err = this.conn.Write(s2)
 	if err != nil {
 		return err
 	}
 
 	// recv C2
-	c2, err := this.Conn.Read(PACKET_SIZE)
+	var c2 = make([]byte, PACKET_SIZE)
+	_, err = this.Read(c2)
 	if err != nil {
 		return err
 	}

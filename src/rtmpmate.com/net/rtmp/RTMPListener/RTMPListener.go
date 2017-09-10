@@ -3,6 +3,7 @@ package RTMPListener
 import (
 	"fmt"
 	"net"
+	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Handshaker"
 	"strconv"
 )
@@ -66,18 +67,22 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 
 	err = shaker.Shake()
 	if err != nil {
+		conn.Close()
 		fmt.Printf("Failed to complete handshake: %v.\n", err)
-	} else {
-		err = shaker.Conn.WaitRequest()
-		if err != nil {
-			fmt.Printf("Failed to wait request: %v.\n", err)
-		}
+		return
 	}
 
-	err = shaker.Conn.Close()
+	r, err := rtmp.New(conn)
 	if err != nil {
-		fmt.Printf("Failed to close client: %v.\n", err)
+		conn.Close()
+		fmt.Printf("Failed to create RTMP: %v.\n", err)
+		return
 	}
 
-	fmt.Printf("Closed client: id=%s.\n", shaker.Conn.FarID)
+	err = r.WaitRequest()
+	if err != nil {
+		conn.Close()
+		fmt.Printf("Failed to wait request: %v.\n", err)
+		return
+	}
 }

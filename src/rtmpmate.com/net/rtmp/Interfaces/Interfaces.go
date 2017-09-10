@@ -7,6 +7,13 @@ import (
 	"rtmpmate.com/util/AMF"
 )
 
+type IEventDispatcher interface {
+	AddEventListener(event string, handler interface{}, count int)
+	RemoveEventListener(event string, handler interface{})
+	HasEventListener(event string) bool
+	DispatchEvent(event interface{})
+}
+
 type INetConnection interface {
 	io.ReadWriteCloser
 
@@ -14,6 +21,12 @@ type INetConnection interface {
 	CreateStream() error
 	Call(method string, res *Responder.Responder, args ...*AMF.AMFValue) error
 	WriteByChunk(b []byte, csid int, h *Message.Header) (int, error)
+
+	GetAppName() string
+	GetInstName() string
+	GetFarID() string
+
+	IEventDispatcher
 }
 
 type IStream interface {
@@ -24,6 +37,8 @@ type IStream interface {
 	Send(handler string, args ...*AMF.AMFValue) error
 	Stop() error
 	Clear() error
+
+	IEventDispatcher
 }
 
 type INetStream interface {
@@ -36,7 +51,10 @@ type INetStream interface {
 	ReceiveAudio(flag bool) error
 	ReceiveVideo(flag bool) error
 	Seek(offset float64) error
+	Send(handler string, args ...*AMF.AMFValue) error
 	Publish(name string, t string) error
 	Stop() error
 	Dispose() error
+
+	IEventDispatcher
 }

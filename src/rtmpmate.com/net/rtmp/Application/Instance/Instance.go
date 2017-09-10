@@ -1,19 +1,25 @@
 package Instance
 
 import (
+	"fmt"
+	"rtmpmate.com/events"
+	"rtmpmate.com/events/CommandEvent"
+	"rtmpmate.com/events/ServerEvent"
+	"rtmpmate.com/net/rtmp/Interfaces"
+	"rtmpmate.com/net/rtmp/Stream"
 	"sync"
-	"syscall"
 )
 
 type Instance struct {
 	Name string
 
-	connections    map[string]interface{}
-	connectionsMtx sync.RWMutex
-	streams        map[string]interface{}
-	streamsMtx     sync.RWMutex
+	clients    map[string]Interfaces.INetConnection
+	clientsMtx sync.RWMutex
+	streams    map[string]Interfaces.IStream
+	streamsMtx sync.RWMutex
 
 	statsToAdmin
+	events.EventDispatcher
 }
 
 type stats struct {
@@ -57,60 +63,75 @@ func New(name string) (*Instance, error) {
 
 	var inst Instance
 	inst.Name = name
-	inst.connections = make(map[string]interface{})
-	inst.streams = make(map[string]interface{})
+	inst.clients = make(map[string]Interfaces.INetConnection)
+	inst.streams = make(map[string]Interfaces.IStream)
+
+	inst.AddEventListener(ServerEvent.CONNECT, inst.onConnect, 0)
+	inst.AddEventListener(ServerEvent.DISCONNECT, inst.onDisconnect, 0)
 
 	return &inst, nil
 }
 
-func (this *Instance) GetConnection(id string) (interface{}, error) {
-	if id == "" {
-		return nil, syscall.EINVAL
+func (this *Instance) GetStream(name string, start float64) (Interfaces.IStream, error) {
+	var err error = nil
+
+	this.streamsMtx.Lock()
+
+	stream, ok := this.streams[name]
+	if ok == false {
+		if start == -2 {
+			stream, err = Stream.New(name)
+			if stream != nil {
+				this.streams[name] = stream
+			}
+		}
 	}
 
-	this.connectionsMtx.Lock()
-	nc, _ := this.connections[id]
-	this.connectionsMtx.Unlock()
-
-	return nc, nil
-}
-
-func (this *Instance) GetStream(name string, start float64) (interface{}, error) {
-	if name == "" {
-		return nil, syscall.EINVAL
+	if stream == nil {
+		err = fmt.Errorf("stream (name=%s) not found", name)
 	}
 
-	this.streamsMtx.Lock()
-	s, _ := this.streams[name]
 	this.streamsMtx.Unlock()
 
-	return s, nil
+	return stream, err
 }
 
-func (this *Instance) AddConnection(id string, nc interface{}) {
-	this.connectionsMtx.Lock()
-	this.connections[id] = nc
-	this.connectionsMtx.Unlock()
+func (this *Instance) Unload() {
+	this.clientsMtx.Lock()
+
+	for _, nc := range this.clients {
+		this.RemoveEventListener(ServerEvent.CONNECT, this.onConnect)
+		this.RemoveEventListener(ServerEvent.DISCONNECT, this.onDisconnect)
+		nc.Close()
+
+		delete(this.clients, nc.GetFarID())
+	}
+
+	this.clientsMtx.Unlock()
 }
 
-func (this *Instance) RemoveConnection(id string) {
-	this.connectionsMtx.Lock()
-	this.connections[id] = nil
-	this.connectionsMtx.Unlock()
+func (this *Instance) onConnect(e *ServerEvent.ServerEvent) {
+	this.clientsMtx.Lock()
+
+	farID := e.Client.GetFarID()
+	this.clients[farID] = e.Client
+
+	this.connected++
+
+	this.clientsMtx.Unlock()
 }
 
-func (this *Instance) AddStream(name string, s interface{}) {
-	this.streamsMtx.Lock()
-	this.streams[name] = s
-	this.streamsMtx.Unlock()
+func (this *Instance) onDisconnect(e *ServerEvent.ServerEvent) {
+	this.clientsMtx.Lock()
+
+	farID := e.Client.GetFarID()
+	delete(this.clients, farID)
+
+	this.connected--
+
+	this.clientsMtx.Unlock()
 }
 
-func (this *Instance) RemoveStream(name string) {
-	this.streamsMtx.Lock()
-	this.streams[name] = nil
-	this.streamsMtx.Unlock()
-}
+func (this *Instance) onGetStats(e *CommandEvent.CommandEvent) {
 
-func (this *Instance) GetStats() *stats {
-	return &this.stats
 }

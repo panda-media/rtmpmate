@@ -10,8 +10,9 @@ import (
 
 type DataMessage struct {
 	Message.Header
-	Key  string
-	Data *AMF.AMFObject
+	Handler string
+	Key     string
+	Data    *AMF.AMFObject
 }
 
 func New(encoding byte) (*DataMessage, error) {
@@ -29,28 +30,34 @@ func New(encoding byte) (*DataMessage, error) {
 func (this *DataMessage) Parse(b []byte, offset int, size int) error {
 	cost := 0
 
-	k, err := AMF.DecodeString(b, offset+cost, size-cost)
-	if err != nil {
-		return err
-	}
-
-	cost += k.Cost
-	this.Key = k.Data
-
 	v, err := AMF.DecodeValue(b, offset+cost, size-cost)
 	if err != nil {
 		return err
 	}
 
 	cost += v.Cost
-	this.Data = &AMF.AMFObject{
-		AMFHash: AMF.AMFHash{v.Hash},
-		Cost:    v.Cost,
-		Ended:   v.Ended,
+	this.Handler = v.Data.(string)
+
+	v, err = AMF.DecodeValue(b, offset+cost, size-cost)
+	if err != nil {
+		return err
 	}
 
-	if v.Type == AMFTypes.OBJECT || v.Type == AMFTypes.ECMA_ARRAY || v.Type == AMFTypes.STRICT_ARRAY {
-		this.Data.Data = v.Data.(list.List)
+	cost += v.Cost
+	this.Key = v.Data.(string)
+
+	v, _ = AMF.DecodeValue(b, offset+cost, size-cost)
+	if v != nil {
+		cost += v.Cost
+		this.Data = &AMF.AMFObject{
+			AMFHash: AMF.AMFHash{v.Hash},
+			Cost:    v.Cost,
+			Ended:   v.Ended,
+		}
+
+		if v.Type == AMFTypes.OBJECT || v.Type == AMFTypes.ECMA_ARRAY || v.Type == AMFTypes.STRICT_ARRAY {
+			this.Data.Data = v.Data.(list.List)
+		}
 	}
 
 	return nil

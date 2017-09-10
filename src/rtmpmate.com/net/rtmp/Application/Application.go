@@ -2,13 +2,19 @@ package Application
 
 import (
 	"fmt"
+	"rtmpmate.com/events"
+	"rtmpmate.com/events/CommandEvent"
+	"rtmpmate.com/events/ServerEvent"
 	"rtmpmate.com/net/rtmp/Application/Instance"
+	"rtmpmate.com/net/rtmp/Interfaces"
 	"sync"
 	"syscall"
 )
 
-var apps map[string]*Application
-var appsMtx sync.RWMutex
+var (
+	apps    map[string]*Application
+	appsMtx sync.RWMutex
+)
 
 func init() {
 	apps = make(map[string]*Application)
@@ -21,6 +27,7 @@ type Application struct {
 	instancesMtx sync.RWMutex
 
 	statsToAdmin
+	events.EventDispatcher
 }
 
 type stats struct {
@@ -60,18 +67,6 @@ type statsToAdmin struct {
 	swfVerificationFailures int
 }
 
-func New(name string) (*Application, error) {
-	if name == "" {
-		return nil, syscall.EINVAL
-	}
-
-	var app Application
-	app.Name = name
-	app.instances = make(map[string]*Instance.Instance)
-
-	return &app, nil
-}
-
 func Get(name string) (*Application, error) {
 	if name == "" {
 		return nil, syscall.EINVAL
@@ -79,59 +74,133 @@ func Get(name string) (*Application, error) {
 
 	appsMtx.Lock()
 
-	var err error
-	var app, ok = apps[name]
-	if ok == false {
-		app, err = New(name)
-		if err != nil {
-			fmt.Printf("Failed to create application \"%s\": %v.\n", name, err)
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("Failed to DispatchEvent: %v.\n", err)
 			appsMtx.Unlock()
-
-			return nil, err
 		}
+	}()
 
-		apps[name] = app
+	app, ok := apps[name]
+	if ok {
+		appsMtx.Unlock()
+		return app, nil
 	}
 
+	var newApp Application
+	newApp.Name = name
+	newApp.instances = make(map[string]*Instance.Instance)
+
+	newApp.AddEventListener(ServerEvent.CONNECT, newApp.onConnect, 0)
+	newApp.AddEventListener(ServerEvent.PUBLISH, newApp.onPublish, 0)
+	newApp.AddEventListener(ServerEvent.UNPUBLISH, newApp.onUnpublish, 0)
+	newApp.AddEventListener(ServerEvent.DISCONNECT, newApp.onDisconnect, 0)
+	newApp.AddEventListener(CommandEvent.GET_STATS, newApp.onGetStats, 0)
+
+	apps[name] = &newApp
 	appsMtx.Unlock()
 
-	return app, nil
+	newApp.onStart()
+
+	return &newApp, nil
 }
 
-func (this *Application) GetInstance(name string) (*Instance.Instance, error) {
-	if name == "" {
-		name = "_definst_"
-	}
+func (this *Application) Accept(nc *Interfaces.INetConnection) error {
+	return nil
+}
+
+func (this *Application) Reject(nc *Interfaces.INetConnection) error {
+	return nil
+}
+
+func (this *Application) Disconnect(nc *Interfaces.INetConnection) error {
+	return nil
+}
+
+func (this *Application) GetStream(instName string, streamName string, start float64) (Interfaces.IStream, error) {
+	var stream Interfaces.IStream
+	var err error
 
 	this.instancesMtx.Lock()
 
-	var err error
-	var inst, ok = this.instances[name]
-	if ok == false {
-		inst, err = Instance.New(name)
-		if err != nil {
-			fmt.Printf("Failed to create instance \"%s\" of application \"%s\": %v.\n", this.Name, name, err)
-			this.instancesMtx.Unlock()
-
-			return nil, err
-		}
-
-		this.instances[name] = inst
+	inst, ok := this.instances[instName]
+	if ok {
+		stream, err = inst.GetStream(streamName, start)
+	} else {
+		stream = nil
+		err = fmt.Errorf("instance (name=%s) not found", instName)
 	}
 
 	this.instancesMtx.Unlock()
 
-	return inst, nil
-}
-
-func (this *Application) GetStats() *stats {
-	return &this.stats
+	return stream, err
 }
 
 func (this *Application) GC() {
 
 }
 
-func (this *Application) Shutdown() bool {
-	return true
+func (this *Application) Shutdown() {
+	this.instancesMtx.Lock()
+
+	for _, inst := range this.instances {
+		inst.Unload()
+		delete(this.instances, inst.Name)
+	}
+
+	this.instancesMtx.Unlock()
+}
+
+func (this *Application) onStart() {
+
+}
+
+func (this *Application) onConnect(e *ServerEvent.ServerEvent) {
+	fmt.Printf("Application.onConnect: id=%s.\n", e.Client.GetFarID())
+
+	this.instancesMtx.Lock()
+
+	instName := e.Client.GetInstName()
+	inst, ok := this.instances[instName]
+	if ok == false {
+		inst, _ = Instance.New(instName)
+		this.instances[instName] = inst
+	}
+	inst.DispatchEvent(ServerEvent.New(ServerEvent.CONNECT, inst, e.Client, nil))
+
+	this.connected++
+
+	this.instancesMtx.Unlock()
+}
+
+func (this *Application) onPublish(e *ServerEvent.ServerEvent) {
+
+}
+
+func (this *Application) onUnpublish(e *ServerEvent.ServerEvent) {
+
+}
+
+func (this *Application) onDisconnect(e *ServerEvent.ServerEvent) {
+	fmt.Printf("Application.onDisconnect: id=%s.\n", e.Client.GetFarID())
+
+	this.instancesMtx.Lock()
+
+	instName := e.Client.GetInstName()
+	inst, ok := this.instances[instName]
+	if ok {
+		inst.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, inst, e.Client, nil))
+	}
+
+	this.connected--
+
+	this.instancesMtx.Unlock()
+}
+
+func (this *Application) onGetStats(e *CommandEvent.CommandEvent) {
+
+}
+
+func (this *Application) onStop() {
+
 }
