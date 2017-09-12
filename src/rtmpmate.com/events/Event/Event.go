@@ -16,7 +16,7 @@ const (
 
 type Event struct {
 	Type   string
-	Target interface{} // 事件发起者
+	Target interface{} // A reference to the object that dispatched the event.
 }
 
 func New(Type string, Target interface{}) *Event {

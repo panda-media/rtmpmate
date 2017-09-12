@@ -505,7 +505,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		fmt.Printf("Sequence Number: %d, Bytes out: %d.\n", sequenceNumber, this.bytesOut)
 
 		if sequenceNumber != this.bytesOut {
-			fmt.Printf("Should I close the connection?\n")
+
 		}
 
 	case Types.USER_CONTROL:
@@ -962,7 +962,7 @@ func (this *NetConnection) getUncompleteChunk() *Chunk.Chunk {
 }
 
 func (this *NetConnection) extendsFromPrecedingChunk(c *Chunk.Chunk) {
-	if c.Fmt != 1 && c.Fmt != 2 {
+	if c.Fmt == 0 {
 		return
 	}
 
@@ -977,10 +977,10 @@ func (this *NetConnection) extendsFromPrecedingChunk(c *Chunk.Chunk) {
 			continue
 		}
 
-		if c.Fmt >= 1 {
+		if c.Fmt >= 1 && c.MessageStreamID == 0 {
 			c.MessageStreamID = b.MessageStreamID
 		}
-		if c.Fmt >= 2 {
+		if c.Fmt >= 2 && c.MessageLength == 0 {
 			c.MessageLength = b.MessageLength
 			c.MessageTypeID = b.MessageTypeID
 		}
