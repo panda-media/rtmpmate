@@ -222,6 +222,8 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 		} else if i == h.Length {
 			cs := c.Data.Bytes()
 			_, err = this.Write(cs)
+
+			this.bytesOut += uint32(c.Data.Len())
 			if err != nil {
 				return i, err
 			}
@@ -242,8 +244,6 @@ func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (
 			return i, fmt.Errorf("wrote too much")
 		}
 	}
-
-	this.bytesOut += uint32(h.Length)
 
 	return h.Length, nil
 }
@@ -903,8 +903,9 @@ func (this *NetConnection) Close() error {
 	this.Connected = false
 	err := this.conn.Close()
 
-	this.DispatchEvent(Event.New(Event.CLOSE, this))
-	this.App.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, this.App, this, nil))
+	if this.App != nil {
+		this.App.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, this.App, this, nil))
+	}
 
 	return err
 }

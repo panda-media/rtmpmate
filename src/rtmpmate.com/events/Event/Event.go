@@ -16,7 +16,7 @@ const (
 
 type Event struct {
 	Type   string
-	Target interface{} //äº‹ä»¶å‘èµ·è€…
+	Target interface{} // ÊÂ¼ş·¢ÆğÕß
 }
 
 func New(Type string, Target interface{}) *Event {

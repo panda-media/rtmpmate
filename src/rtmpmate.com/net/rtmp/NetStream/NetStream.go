@@ -3,12 +3,10 @@ package NetStream
 import (
 	"fmt"
 	"math"
-
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/CommandEvent"
 	"rtmpmate.com/events/DataFrameEvent"
-	"rtmpmate.com/events/Event"
 	"rtmpmate.com/events/NetStatusEvent"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
@@ -35,6 +33,7 @@ func New(nc *NetConnection.NetConnection) (*NetStream, error) {
 	var ns NetStream
 	ns.nc = nc
 
+	nc.AddEventListener(CommandEvent.CLOSE, ns.onClose, 0)
 	nc.AddEventListener(CommandEvent.CREATE_STREAM, ns.onCreateStream, 0)
 	nc.AddEventListener(CommandEvent.PLAY, ns.onPlay, 0)
 	nc.AddEventListener(CommandEvent.PLAY2, ns.onPlay2, 0)
@@ -50,7 +49,6 @@ func New(nc *NetConnection.NetConnection) (*NetStream, error) {
 	nc.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, ns.onClearDataFrame, 0)
 	nc.AddEventListener(AudioEvent.DATA, ns.onAudio, 0)
 	nc.AddEventListener(VideoEvent.DATA, ns.onVideo, 0)
-	nc.AddEventListener(Event.CLOSE, ns.onClose, 0)
 
 	return &ns, nil
 }
@@ -132,7 +130,6 @@ func (this *NetStream) sendDataFrame(e *DataFrameEvent.DataFrameEvent) error {
 }
 
 func (this *NetStream) clearDataFrame(e *DataFrameEvent.DataFrameEvent) error {
-	fmt.Println("NetStream clear data frame ")
 	return this.Send(e.Type, &AMF.AMFValue{
 		Type: AMFTypes.STRING,
 		Data: e.Key,
@@ -140,14 +137,21 @@ func (this *NetStream) clearDataFrame(e *DataFrameEvent.DataFrameEvent) error {
 }
 
 func (this *NetStream) sendAudio(e *AudioEvent.AudioEvent) error {
-	fmt.Println("SEND AV")
-	_, err := this.nc.Write(e.Data.Payload)
-	return err
+	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
-	_, err := this.nc.Write(e.Data.Payload)
-	return err
+	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (this *NetStream) Close() error {
@@ -225,7 +229,6 @@ func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 			}
 
 			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
-			this.sendInfo(e, info)
 		} else {
 			info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_STREAMNOTFOUND, "Stream not found")
 		}
@@ -233,10 +236,7 @@ func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 		info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_FAILED, "No read access")
 	}
 
-	//	e.Encoder.EncodeString(Commands.ON_STATUS)
-	//	e.Encoder.EncodeNumber(0)
-	//	e.Encoder.EncodeNull()
-	//	e.Encoder.EncodeObject(info)
+	this.sendInfo(e, info)
 }
 
 func (this *NetStream) sendInfo(e *CommandEvent.CommandEvent, info *AMF.AMFObject) {
@@ -244,9 +244,11 @@ func (this *NetStream) sendInfo(e *CommandEvent.CommandEvent, info *AMF.AMFObjec
 	e.Encoder.EncodeNumber(0)
 	e.Encoder.EncodeNull()
 	e.Encoder.EncodeObject(info)
+	
 	e.Message.Length = e.Encoder.Len()
 	b, _ := e.Encoder.Encode()
 	this.nc.WriteByChunk(b, CSIDs.COMMAND, &e.Message.Header)
+	
 	e.Encoder.Reset()
 }
 
@@ -255,10 +257,14 @@ func (this *NetStream) onPlay2(e *CommandEvent.CommandEvent) {
 }
 
 func (this *NetStream) onDeleteStream(e *CommandEvent.CommandEvent) {
+	this.stream.Close()
+	this.stream.Clear()
 	this.stream = nil
 }
 
 func (this *NetStream) onCloseStream(e *CommandEvent.CommandEvent) {
+	this.stream.Close()
+	this.stream.Clear()
 	this.stream = nil
 }
 
@@ -372,6 +378,6 @@ func (this *NetStream) onMetaData(e *DataFrameEvent.DataFrameEvent) {
 	//fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
 }
 
-func (this *NetStream) onClose(e *Event.Event) {
+func (this *NetStream) onClose(e *CommandEvent.CommandEvent) {
 	this.Close()
 }

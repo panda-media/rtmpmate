@@ -1,6 +1,7 @@
 package events
 
 import (
+	"container/list"
 	"fmt"
 	"reflect"
 )
@@ -11,56 +12,52 @@ type listener struct {
 }
 
 type EventDispatcher struct {
-	listeners map[string][]listener
+	listeners map[string]*list.List
 }
 
 func (this *EventDispatcher) AddEventListener(event string, handler interface{}, count int) {
 	if this.listeners == nil {
-		this.listeners = make(map[string][]listener)
+		this.listeners = make(map[string]*list.List)
 	}
 
-	listeners := this.listeners[event]
-
+	listeners, _ := this.listeners[event]
 	if listeners == nil {
-		listeners = make([]listener, 0, 8)
+		listeners = list.New()
+		this.listeners[event] = listeners
 	}
 
-	listeners = append(listeners, listener{handler, count})
-	this.listeners[event] = listeners
+	listeners.PushBack(&listener{handler, count})
 
-	//fmt.Printf("Added event: %s, len=%d, cap=%d.\n", event, len(listeners), cap(listeners))
+	fmt.Printf("Added event: %s, len=%d.\n", event, listeners.Len())
 }
 
 func (this *EventDispatcher) RemoveEventListener(event string, handler interface{}) {
-	listeners := this.listeners[event]
-
+	listeners, _ := this.listeners[event]
 	if listeners == nil {
 		return
 	}
 
 	if handler == nil {
-		listeners = listeners[0:0]
-		this.listeners[event] = listeners
+		listeners.Init()
 		return
 	}
 
-	for i, listener := range listeners {
-		p1 := reflect.ValueOf(listener.handler).Pointer()
+	for e := listeners.Front(); e != nil; e = e.Next() {
+		ln := e.Value.(*listener)
+		p1 := reflect.ValueOf(ln.handler).Pointer()
 		p2 := reflect.ValueOf(handler).Pointer()
 		if p1 == p2 {
-			copy(listeners[i:], listeners[i+1:])
-			this.listeners[event] = listeners[:len(listeners)-1]
+			listeners.Remove(e)
 			break
 		}
 	}
 
-	fmt.Printf("Removed event: %s, len: %d, cap: %d.\n", event, len(listeners), cap(listeners))
+	fmt.Printf("Removed event: %s, len: %d.\n", event, listeners.Len())
 }
 
 func (this *EventDispatcher) HasEventListener(event string) bool {
 	listeners, _ := this.listeners[event]
-
-	if listeners == nil || len(listeners) == 0 {
+	if listeners == nil || listeners.Len() == 0 {
 		return false
 	}
 
@@ -78,7 +75,7 @@ func (this *EventDispatcher) DispatchEvent(event interface{}) {
 	var eventElem = eventValue.Elem()
 	var eventType = eventElem.FieldByName("Type").String()
 
-	listeners := this.listeners[eventType]
+	listeners, _ := this.listeners[eventType]
 	if listeners == nil {
 		return
 	}
@@ -91,19 +88,18 @@ func (this *EventDispatcher) DispatchEvent(event interface{}) {
 
 	var eventIn = []reflect.Value{eventValue}
 
-	for i, listener := range listeners {
-		if listener.count > 0 {
-			listener.count--
+	for e := listeners.Front(); e != nil; e = e.Next() {
+		ln := e.Value.(*listener)
+		if ln.count > 0 {
+			ln.count--
 
-			if listener.count == 0 {
-				copy(listeners[i:], listeners[i+1:])
-				listeners = listeners[:len(listeners)-1]
-				this.listeners[eventType] = listeners
+			if ln.count == 0 {
+				listeners.Remove(e)
 			}
 		}
 
-		if listener.handler != nil {
-			reflect.ValueOf(listener.handler).Call(eventIn)
+		if ln.handler != nil {
+			reflect.ValueOf(ln.handler).Call(eventIn)
 		}
 	}
 }

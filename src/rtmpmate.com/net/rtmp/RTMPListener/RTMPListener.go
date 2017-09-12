@@ -74,14 +74,14 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 
 	r, err := rtmp.New(conn)
 	if err != nil {
-		conn.Close()
+		r.Close()
 		fmt.Printf("Failed to create RTMP: %v.\n", err)
 		return
 	}
 
 	err = r.WaitRequest()
 	if err != nil {
-		conn.Close()
+		r.Close()
 		fmt.Printf("Failed to wait request: %v.\n", err)
 		return
 	}

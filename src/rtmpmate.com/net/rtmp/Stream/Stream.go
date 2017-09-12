@@ -3,8 +3,6 @@ package Stream
 import (
 	"container/list"
 	"fmt"
-	"syscall"
-
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
@@ -12,6 +10,7 @@ import (
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
 	"rtmpmate.com/util/AMF"
+	"syscall"
 )
 
 type Stream struct {

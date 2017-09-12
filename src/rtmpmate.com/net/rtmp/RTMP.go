@@ -3,6 +3,7 @@ package rtmp
 import (
 	"fmt"
 	"net"
+	"rtmpmate.com/events/CommandEvent"
 	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/NetStream"
 )
@@ -34,4 +35,9 @@ func New(conn *net.TCPConn) (*RTMP, error) {
 
 func (this *RTMP) WaitRequest() error {
 	return this.nc.WaitRequest()
+}
+
+func (this *RTMP) Close() error {
+	this.nc.DispatchEvent(CommandEvent.New(CommandEvent.CLOSE, this, nil, nil))
+	return nil
 }
