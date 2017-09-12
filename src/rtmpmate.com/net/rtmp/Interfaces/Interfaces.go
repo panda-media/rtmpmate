@@ -32,11 +32,13 @@ type INetConnection interface {
 type IStream interface {
 	io.Closer
 
+	Source(src IStream) error
+	Sink(to IStream) error
 	Play(name string, start float64, length float64, reset bool) error
 	Record(mode string, maxDuration int, maxSize int) error
 	Send(handler string, args ...*AMF.AMFValue) error
-	Stop() error
 	Clear() error
+	Unlink(src IStream) error
 
 	IEventDispatcher
 }
@@ -51,9 +53,8 @@ type INetStream interface {
 	ReceiveAudio(flag bool) error
 	ReceiveVideo(flag bool) error
 	Seek(offset float64) error
-	Send(handler string, args ...*AMF.AMFValue) error
 	Publish(name string, t string) error
-	Stop() error
+	Send(handler string, args ...*AMF.AMFValue) error
 	Dispose() error
 
 	IEventDispatcher

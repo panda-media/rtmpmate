@@ -7,6 +7,7 @@ import (
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/VideoEvent"
+	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
 	"rtmpmate.com/util/AMF"
 	"syscall"
@@ -29,6 +30,8 @@ type Stream struct {
 	ReceiveAudio       bool
 	ReceiveVideo       bool
 
+	src Interfaces.IStream
+	to  Interfaces.IStream
 	events.EventDispatcher
 }
 
@@ -44,7 +47,7 @@ func New(name string) (*Stream, error) {
 	return &s, nil
 }
 
-func (this *Stream) Source(src *Stream) error {
+func (this *Stream) Source(src Interfaces.IStream) error {
 	if src == nil {
 		return syscall.EINVAL
 	}
@@ -53,16 +56,18 @@ func (this *Stream) Source(src *Stream) error {
 	src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
 	src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
 	src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
+	this.src = src
 
 	return nil
 }
 
-func (this *Stream) Sink(to *Stream) error {
+func (this *Stream) Sink(to Interfaces.IStream) error {
 	if to == nil {
 		return syscall.EINVAL
 	}
 
 	to.Source(this)
+	this.to = to
 
 	return nil
 }
@@ -87,16 +92,28 @@ func (this *Stream) Send(handler string, args ...*AMF.AMFValue) error {
 	return nil
 }
 
-func (this *Stream) Stop() error {
-	return nil
-}
-
 func (this *Stream) Clear() error {
 	this.Chunks.Init()
 	return nil
 }
 
 func (this *Stream) Close() error {
+	if this.src != nil {
+		this.Unlink(this.src)
+	}
+	if this.to != nil {
+		this.to.Unlink(this)
+	}
+
+	return nil
+}
+
+func (this *Stream) Unlink(src Interfaces.IStream) error {
+	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
+	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
+
 	return nil
 }
 

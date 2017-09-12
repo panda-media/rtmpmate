@@ -7,6 +7,7 @@ import (
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/CommandEvent"
 	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/Event"
 	"rtmpmate.com/events/NetStatusEvent"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
@@ -48,18 +49,13 @@ func New(nc *NetConnection.NetConnection) (*NetStream, error) {
 	nc.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, ns.onClearDataFrame, 0)
 	nc.AddEventListener(AudioEvent.DATA, ns.onAudio, 0)
 	nc.AddEventListener(VideoEvent.DATA, ns.onVideo, 0)
+	nc.AddEventListener(Event.CLOSE, ns.onClose, 0)
 
 	return &ns, nil
 }
 
 func (this *NetStream) Attach(src *Stream.Stream) error {
 	this.stream = src
-	//this.stream.AddEventListener("onMetaData", this.onMetaData, 0)
-	this.stream.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame, 0)
-	this.stream.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame, 0)
-	this.stream.AddEventListener(AudioEvent.DATA, this.sendAudio, 0)
-	this.stream.AddEventListener(VideoEvent.DATA, this.sendVideo, 0)
-
 	return nil
 }
 
@@ -151,7 +147,11 @@ func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
 	return err
 }
 
-func (this *NetStream) Stop() error {
+func (this *NetStream) Close() error {
+	if this.stream != nil {
+		return this.stream.Close()
+	}
+
 	return nil
 }
 
@@ -163,11 +163,11 @@ func (this *NetStream) onCreateStream(e *CommandEvent.CommandEvent) {
 	var command, code, description string
 
 	if this.nc.ReadAccess == "/" || this.nc.ReadAccess == "/"+this.nc.AppName {
-		this.stream, _ = Stream.New(this.nc.FarID)
-		if this.stream != nil {
-			this.stream.ID = 1 // ID 0 is used as NetConnection
-			this.stream.Type = StreamTypes.IDLE
-			this.Attach(this.stream)
+		stream, _ := Stream.New(this.nc.FarID)
+		if stream != nil {
+			stream.ID = 1 // ID 0 is used as NetConnection
+			stream.Type = StreamTypes.IDLE
+			this.Attach(stream)
 
 			command = Commands.RESULT
 		} else {
@@ -203,7 +203,17 @@ func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 		stream, _ := this.nc.App.GetStream(this.nc.InstName, e.Message.StreamName, e.Message.Start)
 		if stream != nil {
 			this.stream.Name = e.Message.StreamName
-			this.stream.Type = StreamTypes.PLAYING_LIVE
+			if stream.(*Stream.Stream).Type == StreamTypes.PLAYING_VOD {
+				this.stream.Type = StreamTypes.PLAYING_VOD
+			} else {
+				this.stream.Type = StreamTypes.PLAYING_LIVE
+			}
+
+			this.stream.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame, 0)
+			this.stream.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame, 0)
+			//this.stream.AddEventListener("onMetaData", this.onMetaData, 0)
+			this.stream.AddEventListener(AudioEvent.DATA, this.sendAudio, 0)
+			this.stream.AddEventListener(VideoEvent.DATA, this.sendVideo, 0)
 			this.stream.Source(stream.(*Stream.Stream))
 
 			if e.Message.Reset {
@@ -287,7 +297,13 @@ func (this *NetStream) onPublish(e *CommandEvent.CommandEvent) {
 		} else if stream.(*Stream.Stream).Type == StreamTypes.PUBLISHING {
 			info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PUBLISH_BADNAME, "Publish bad name")
 		} else {
+			this.stream.Name = e.Message.PublishingName
 			this.stream.Type = StreamTypes.PUBLISHING
+			this.stream.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame)
+			this.stream.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame)
+			//this.stream.RemoveEventListener("onMetaData", this.onMetaData)
+			this.stream.RemoveEventListener(AudioEvent.DATA, this.sendAudio)
+			this.stream.RemoveEventListener(VideoEvent.DATA, this.sendVideo)
 			this.stream.Sink(stream.(*Stream.Stream))
 
 			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
@@ -373,4 +389,8 @@ func (this *NetStream) onVideo(e *VideoEvent.VideoEvent) {
 
 func (this *NetStream) onMetaData(e *DataFrameEvent.DataFrameEvent) {
 	//fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
+}
+
+func (this *NetStream) onClose(e *Event.Event) {
+	this.Close()
 }

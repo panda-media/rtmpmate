@@ -475,7 +475,9 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 }
 
 func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
-	fmt.Printf("onMessage: 0x%02x.\n", c.MessageTypeID)
+	if c.MessageTypeID != 0x08 && c.MessageTypeID != 0x09 {
+		fmt.Printf("onMessage: 0x%02x.\n", c.MessageTypeID)
+	}
 
 	b := c.Data.Bytes()
 	size := c.Data.Len()
@@ -898,9 +900,10 @@ func (this *NetConnection) Call(method string, res *Responder.Responder, args ..
 }
 
 func (this *NetConnection) Close() error {
+	this.Connected = false
 	err := this.conn.Close()
 
-	this.Connected = false
+	this.DispatchEvent(Event.New(Event.CLOSE, this))
 	this.App.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, this.App, this, nil))
 
 	return err
