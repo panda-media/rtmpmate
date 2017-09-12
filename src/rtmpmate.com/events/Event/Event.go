@@ -16,7 +16,7 @@ const (
 
 type Event struct {
 	Type   string
-	Target interface{}
+	Target interface{} //事件发起者
 }
 
 func New(Type string, Target interface{}) *Event {
