@@ -7,7 +7,13 @@ import (
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/VideoEvent"
+	AACTypes "rtmpmate.com/muxer/codec/AAC/Types"
+	"rtmpmate.com/muxer/codec/AudioFormats"
+	H264Types "rtmpmate.com/muxer/codec/H264/Types"
+	"rtmpmate.com/muxer/codec/VideoCodecs"
 	"rtmpmate.com/net/rtmp/Interfaces"
+	"rtmpmate.com/net/rtmp/Message/AudioMessage"
+	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
 	"rtmpmate.com/util/AMF"
 	"syscall"
@@ -19,6 +25,8 @@ type Stream struct {
 	Type               string
 	Chunks             list.List
 	DataFrames         map[string]*AMF.AMFObject
+	InitAudio          *AudioMessage.AudioMessage
+	InitVideo          *VideoMessage.VideoMessage
 	Time               float64 // at when to init
 	BufferTime         float64
 	CurrentTime        float64
@@ -52,11 +60,17 @@ func (this *Stream) Source(src Interfaces.IStream) error {
 		return syscall.EINVAL
 	}
 
-	src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
-	src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
-	src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
-	src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 	this.src = src
+	this.src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
+	this.src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
+
+	meta := this.src.GetDataFrame("onMetaData")
+	if meta != nil {
+		this.DataFrames["onMetaData"] = meta
+		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	}
 
 	return nil
 }
@@ -66,8 +80,8 @@ func (this *Stream) Sink(to Interfaces.IStream) error {
 		return syscall.EINVAL
 	}
 
-	to.Source(this)
 	this.to = to
+	this.to.Source(this)
 
 	return nil
 }
@@ -92,8 +106,23 @@ func (this *Stream) Send(handler string, args ...*AMF.AMFValue) error {
 	return nil
 }
 
+func (this *Stream) GetDataFrame(name string) *AMF.AMFObject {
+	data, _ := this.DataFrames[name]
+	return data
+}
+
+func (this *Stream) GetInitAudio() *AudioMessage.AudioMessage {
+	return this.InitAudio
+}
+
+func (this *Stream) GetInitVideo() *VideoMessage.VideoMessage {
+	return this.InitVideo
+}
+
 func (this *Stream) Clear() error {
 	this.Chunks.Init()
+	this.DataFrames = make(map[string]*AMF.AMFObject)
+
 	return nil
 }
 
@@ -130,9 +159,37 @@ func (this *Stream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
 }
 
 func (this *Stream) onAudio(e *AudioEvent.AudioEvent) {
-	this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+	if this.InitAudio == nil {
+		if e.Data.Format == AudioFormats.AAC && e.Data.DataType == AACTypes.SPECIFIC_CONFIG {
+			this.InitAudio = e.Data
+			this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+		} else {
+			initAudio := this.src.GetInitAudio()
+			if initAudio != nil {
+				this.InitAudio = initAudio
+				this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, initAudio))
+				this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+			}
+		}
+	} else {
+		this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+	}
 }
 
 func (this *Stream) onVideo(e *VideoEvent.VideoEvent) {
-	this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+	if this.InitVideo == nil {
+		if e.Data.Codec == VideoCodecs.AVC && e.Data.DataType == H264Types.SEQUENCE_HEADER {
+			this.InitVideo = e.Data
+			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+		} else {
+			initVideo := this.src.GetInitVideo()
+			if initVideo != nil {
+				this.InitVideo = initVideo
+				this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, initVideo))
+				this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+			}
+		}
+	} else {
+		this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+	}
 }

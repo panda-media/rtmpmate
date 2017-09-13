@@ -28,7 +28,7 @@ func (this *EventDispatcher) AddEventListener(event string, handler interface{},
 
 	listeners.PushBack(&listener{handler, count})
 
-	fmt.Printf("Added event: %s, len=%d.\n", event, listeners.Len())
+	//fmt.Printf("Added event: %s, len=%d.\n", event, listeners.Len())
 }
 
 func (this *EventDispatcher) RemoveEventListener(event string, handler interface{}) {
@@ -52,7 +52,7 @@ func (this *EventDispatcher) RemoveEventListener(event string, handler interface
 		}
 	}
 
-	fmt.Printf("Removed event: %s, len: %d.\n", event, listeners.Len())
+	//fmt.Printf("Removed event: %s, len: %d.\n", event, listeners.Len())
 }
 
 func (this *EventDispatcher) HasEventListener(event string) bool {

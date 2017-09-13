@@ -3,6 +3,8 @@ package Interfaces
 import (
 	"io"
 	"rtmpmate.com/net/rtmp/Message"
+	"rtmpmate.com/net/rtmp/Message/AudioMessage"
+	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/net/rtmp/Responder"
 	"rtmpmate.com/util/AMF"
 )
@@ -37,6 +39,9 @@ type IStream interface {
 	Play(name string, start float64, length float64, reset bool) error
 	Record(mode string, maxDuration int, maxSize int) error
 	Send(handler string, args ...*AMF.AMFValue) error
+	GetDataFrame(name string) *AMF.AMFObject
+	GetInitAudio() *AudioMessage.AudioMessage
+	GetInitVideo() *VideoMessage.VideoMessage
 	Clear() error
 	Unlink(src IStream) error
 

@@ -7,7 +7,12 @@ import (
 
 type AudioMessage struct {
 	Message.Header
-	Payload []byte
+	Format     byte // 1111 0000
+	SampleRate byte // 0000 1100
+	SampleSize byte // 0000 0010
+	Channels   byte // 0000 0001
+	DataType   byte
+	Payload    []byte
 }
 
 func New() (*AudioMessage, error) {
@@ -19,6 +24,17 @@ func New() (*AudioMessage, error) {
 
 func (this *AudioMessage) Parse(b []byte, offset int, size int) error {
 	this.Length = size
+
+	pos := 0
+	tmp := b[offset+pos]
+	this.Format = (tmp >> 4) & 0x0F
+	this.SampleRate = (tmp >> 2) & 0x03
+	this.SampleSize = (tmp >> 1) & 0x01
+	this.Channels = tmp & 0x01
+
+	pos++
+	this.DataType = b[offset+pos]
+
 	this.Payload = b[offset : offset+size]
 
 	return nil

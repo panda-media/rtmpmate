@@ -475,7 +475,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 }
 
 func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
-	if c.MessageTypeID != 0x08 && c.MessageTypeID != 0x09 {
+	if c.MessageTypeID != 0x03 && c.MessageTypeID != 0x08 && c.MessageTypeID != 0x09 {
 		fmt.Printf("onMessage: 0x%02x.\n", c.MessageTypeID)
 	}
 
@@ -502,7 +502,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.ACK:
 		sequenceNumber := binary.BigEndian.Uint32(b)
-		fmt.Printf("Sequence Number: %d, Bytes out: %d.\n", sequenceNumber, this.bytesOut)
+		//fmt.Printf("Sequence Number: %d, Bytes out: %d.\n", sequenceNumber, this.bytesOut)
 
 		if sequenceNumber != this.bytesOut {
 
@@ -589,6 +589,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		// TODO:
 
 	case Types.AMF3_COMMAND:
+		b = b[1:]
 		fallthrough
 	case Types.COMMAND:
 		m, _ := CommandMessage.New(this.ObjectEncoding)

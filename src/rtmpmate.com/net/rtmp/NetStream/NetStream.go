@@ -138,20 +138,12 @@ func (this *NetStream) clearDataFrame(e *DataFrameEvent.DataFrameEvent) error {
 
 func (this *NetStream) sendAudio(e *AudioEvent.AudioEvent) error {
 	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
 	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (this *NetStream) Close() error {
@@ -209,6 +201,13 @@ func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 	if this.nc.ReadAccess == "/" || this.nc.ReadAccess == "/"+this.nc.AppName {
 		stream, _ := this.nc.App.GetStream(this.nc.InstName, e.Message.StreamName, e.Message.Start)
 		if stream != nil {
+			if e.Message.Reset {
+				info, _ := this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
+				this.sendStatus(e, info)
+			}
+			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
+			this.sendStatus(e, info)
+
 			this.stream.Name = e.Message.StreamName
 			if stream.(*Stream.Stream).Type == StreamTypes.PLAYING_VOD {
 				this.stream.Type = StreamTypes.PLAYING_VOD
@@ -218,25 +217,17 @@ func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 
 			this.stream.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame, 0)
 			this.stream.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame, 0)
-			//this.stream.AddEventListener("onMetaData", this.onMetaData, 0)
 			this.stream.AddEventListener(AudioEvent.DATA, this.sendAudio, 0)
 			this.stream.AddEventListener(VideoEvent.DATA, this.sendVideo, 0)
 			this.stream.Source(stream.(*Stream.Stream))
-
-			if e.Message.Reset {
-				info, _ := this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
-				this.sendStatus(e, info)
-			}
-
-			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
 		} else {
 			info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_STREAMNOTFOUND, "Stream not found")
+			this.sendStatus(e, info)
 		}
 	} else {
 		info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_FAILED, "No read access")
+		this.sendStatus(e, info)
 	}
-
-	this.sendStatus(e, info)
 }
 
 func (this *NetStream) sendStatus(e *CommandEvent.CommandEvent, info *AMF.AMFObject) {
@@ -290,26 +281,27 @@ func (this *NetStream) onPublish(e *CommandEvent.CommandEvent) {
 		stream, _ := this.nc.App.GetStream(this.nc.InstName, e.Message.PublishingName, -2)
 		if stream == nil {
 			info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_FAILED, "Internal error")
+			this.sendStatus(e, info)
 		} else if stream.(*Stream.Stream).Type == StreamTypes.PUBLISHING {
 			info, _ = this.nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PUBLISH_BADNAME, "Publish bad name")
+			this.sendStatus(e, info)
 		} else {
+			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
+			this.sendStatus(e, info)
+
 			this.stream.Name = e.Message.PublishingName
 			this.stream.Type = StreamTypes.PUBLISHING
 			this.stream.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame)
 			this.stream.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame)
-			//this.stream.RemoveEventListener("onMetaData", this.onMetaData)
 			this.stream.RemoveEventListener(AudioEvent.DATA, this.sendAudio)
 			this.stream.RemoveEventListener(VideoEvent.DATA, this.sendVideo)
 			this.stream.Sink(stream.(*Stream.Stream))
-
-			info, _ = this.nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
 		}
 	} else {
 		// TODO: Test on AMS
 		info, _ = this.nc.GetInfoObject(Level.ERROR, "No write access", "No write access")
+		this.sendStatus(e, info)
 	}
-
-	this.sendStatus(e, info)
 }
 
 func (this *NetStream) onSeek(e *CommandEvent.CommandEvent) {
