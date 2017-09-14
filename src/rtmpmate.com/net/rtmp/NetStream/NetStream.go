@@ -144,8 +144,8 @@ func (this *NetStream) sendAudio(e *AudioEvent.AudioEvent) error {
 }
 
 func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
-	//_, err := this.nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
-	return nil
+	_, err := this.nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
+	return err
 }
 
 func (this *NetStream) Close() error {

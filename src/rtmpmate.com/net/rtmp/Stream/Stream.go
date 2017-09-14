@@ -167,18 +167,8 @@ func (this *Stream) onAudio(e *AudioEvent.AudioEvent) {
 		if e.Message.Format == AudioFormats.AAC && e.Message.DataType == AACTypes.SPECIFIC_CONFIG {
 			this.InitAudio = e.Message
 			this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
-		} else {
-			initAudio := this.src.GetInitAudio()
-			if initAudio != nil {
-				this.InitAudio = initAudio
-				this.DispatchEvent(AudioEvent.New(e.Type, this, initAudio))
-
-				if this.InitVideo != nil {
-					this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
-				}
-			}
 		}
-	} else if this.InitVideo != nil {
+	} else {
 		this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
 	}
 }
@@ -193,8 +183,17 @@ func (this *Stream) onVideo(e *VideoEvent.VideoEvent) {
 			if initVideo != nil {
 				this.InitVideo = initVideo
 				this.DispatchEvent(VideoEvent.New(e.Type, this, initVideo))
-				this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 			}
+
+			if this.InitAudio == nil {
+				initAudio := this.src.GetInitAudio()
+				if initAudio != nil {
+					this.InitAudio = initAudio
+					this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, initAudio))
+				}
+			}
+
+			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 		}
 	} else {
 		this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
