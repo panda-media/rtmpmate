@@ -154,22 +154,25 @@ func (this *Stream) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
 	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
 
 	this.DataFrames[e.Key] = e.Data
-	this.DispatchEvent(DataFrameEvent.New(e.Type, this, e.Key, e.Data))
+	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
 }
 
 func (this *Stream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
 	delete(this.DataFrames, e.Key)
-	this.DispatchEvent(DataFrameEvent.New(e.Type, this, e.Key, e.Data))
+	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
 }
 
 func (this *Stream) onAudio(e *AudioEvent.AudioEvent) {
 	if this.InitAudio == nil {
 		if e.Message.Format == AudioFormats.AAC && e.Message.DataType == AACTypes.SPECIFIC_CONFIG {
 			this.InitAudio = e.Message
-			this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
+			if this.InitVideo != nil {
+				this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, this.InitVideo))
+				this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, this.InitAudio))
+			}
 		}
-	} else {
-		this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
+	} else if this.InitVideo != nil {
+		this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, e.Message))
 	}
 }
 
@@ -177,25 +180,26 @@ func (this *Stream) onVideo(e *VideoEvent.VideoEvent) {
 	if this.InitVideo == nil {
 		if e.Message.Codec == VideoCodecs.AVC && e.Message.DataType == H264Types.SEQUENCE_HEADER {
 			this.InitVideo = e.Message
-			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
+			if this.InitAudio != nil {
+				this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, this.InitAudio))
+				this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, this.InitVideo))
+			}
 		} else if e.Message.FrameType == FrameTypes.KEYFRAME || e.Message.FrameType == FrameTypes.GENERATED_KEYFRAME {
-			initVideo := this.src.GetInitVideo()
-			if initVideo != nil {
-				this.InitVideo = initVideo
-				this.DispatchEvent(VideoEvent.New(e.Type, this, initVideo))
-			}
-
 			if this.InitAudio == nil {
-				initAudio := this.src.GetInitAudio()
-				if initAudio != nil {
-					this.InitAudio = initAudio
-					this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, initAudio))
-				}
+				this.InitAudio = this.src.GetInitAudio()
+			}
+			if this.InitVideo == nil {
+				this.InitVideo = this.src.GetInitVideo()
 			}
 
-			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
+			if this.InitAudio != nil && this.InitVideo != nil {
+				this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, this.InitAudio))
+				this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, this.InitVideo))
+			}
+
+			this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, e.Message))
 		}
-	} else {
-		this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
+	} else if this.InitAudio != nil {
+		this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, e.Message))
 	}
 }
