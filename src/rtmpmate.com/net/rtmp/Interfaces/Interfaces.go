@@ -22,7 +22,7 @@ type INetConnection interface {
 	Connect(uri string, args ...*AMF.AMFValue) error
 	CreateStream() error
 	Call(method string, res *Responder.Responder, args ...*AMF.AMFValue) error
-	WriteByChunk(b []byte, csid int, h *Message.Header) (int, error)
+	WriteByChunk(b []byte, h *Message.Header) (int, error)
 
 	GetAppName() string
 	GetInstName() string

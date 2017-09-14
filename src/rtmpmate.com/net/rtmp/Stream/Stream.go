@@ -14,6 +14,7 @@ import (
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
+	"rtmpmate.com/net/rtmp/Message/VideoMessage/FrameTypes"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
 	"rtmpmate.com/util/AMF"
 	"syscall"
@@ -122,6 +123,8 @@ func (this *Stream) GetInitVideo() *VideoMessage.VideoMessage {
 func (this *Stream) Clear() error {
 	this.Chunks.Init()
 	this.DataFrames = make(map[string]*AMF.AMFObject)
+	this.InitAudio = nil
+	this.InitVideo = nil
 
 	return nil
 }
@@ -142,6 +145,7 @@ func (this *Stream) Unlink(src Interfaces.IStream) error {
 	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
 	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
+	this.src = nil
 
 	return nil
 }
@@ -160,36 +164,39 @@ func (this *Stream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
 
 func (this *Stream) onAudio(e *AudioEvent.AudioEvent) {
 	if this.InitAudio == nil {
-		if e.Data.Format == AudioFormats.AAC && e.Data.DataType == AACTypes.SPECIFIC_CONFIG {
-			this.InitAudio = e.Data
-			this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+		if e.Message.Format == AudioFormats.AAC && e.Message.DataType == AACTypes.SPECIFIC_CONFIG {
+			this.InitAudio = e.Message
+			this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
 		} else {
 			initAudio := this.src.GetInitAudio()
 			if initAudio != nil {
 				this.InitAudio = initAudio
-				this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, initAudio))
-				this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+				this.DispatchEvent(AudioEvent.New(e.Type, this, initAudio))
+
+				if this.InitVideo != nil {
+					this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
+				}
 			}
 		}
-	} else {
-		this.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+	} else if this.InitVideo != nil {
+		this.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
 	}
 }
 
 func (this *Stream) onVideo(e *VideoEvent.VideoEvent) {
 	if this.InitVideo == nil {
-		if e.Data.Codec == VideoCodecs.AVC && e.Data.DataType == H264Types.SEQUENCE_HEADER {
-			this.InitVideo = e.Data
-			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
-		} else {
+		if e.Message.Codec == VideoCodecs.AVC && e.Message.DataType == H264Types.SEQUENCE_HEADER {
+			this.InitVideo = e.Message
+			this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
+		} else if e.Message.FrameType == FrameTypes.KEYFRAME || e.Message.FrameType == FrameTypes.GENERATED_KEYFRAME {
 			initVideo := this.src.GetInitVideo()
 			if initVideo != nil {
 				this.InitVideo = initVideo
-				this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, initVideo))
-				this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+				this.DispatchEvent(VideoEvent.New(e.Type, this, initVideo))
+				this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 			}
 		}
 	} else {
-		this.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+		this.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 	}
 }

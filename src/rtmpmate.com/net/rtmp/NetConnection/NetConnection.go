@@ -17,7 +17,7 @@ import (
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Chunk"
-	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
+	//"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/AggregateMessage"
@@ -146,22 +146,22 @@ func (this *NetConnection) Write(b []byte) (int, error) {
 	return this.conn.Write(b)
 }
 
-func (this *NetConnection) WriteByChunk(b []byte, csid int, h *Message.Header) (int, error) {
+func (this *NetConnection) WriteByChunk(b []byte, h *Message.Header) (int, error) {
 	if h.Length < 2 {
 		return 0, fmt.Errorf("chunk data (len=%d) not enough", h.Length)
 	}
 
 	var c Chunk.Chunk
-	c.Fmt = 0
+	c.Fmt = h.Fmt
 
 	for i := 0; i < h.Length; /* void */ {
-		if csid <= 63 {
-			c.Data.WriteByte((c.Fmt << 6) | byte(csid))
-		} else if csid <= 319 {
+		if h.CSID <= 63 {
+			c.Data.WriteByte((c.Fmt << 6) | byte(h.CSID))
+		} else if h.CSID <= 319 {
 			c.Data.WriteByte((c.Fmt << 6) | 0x00)
-			c.Data.WriteByte(byte(csid - 64))
-		} else if csid <= 65599 {
-			tmp := uint16(csid)
+			c.Data.WriteByte(byte(h.CSID - 64))
+		} else if h.CSID <= 65599 {
+			tmp := uint16(h.CSID)
 			c.Data.WriteByte((c.Fmt << 6) | 0x01)
 			err := binary.Write(&c.Data, binary.LittleEndian, &tmp)
 			if err != nil {
@@ -275,11 +275,16 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 		switch c.State {
 		case States.START:
-			c.Fmt = (b[i] >> 6) & 0xFF
+			c.CurrentFmt = (b[i] >> 6) & 0xFF
 			c.CSID = uint32(b[i]) & 0x3F
 
+			if c.Polluted == false {
+				c.Fmt = c.CurrentFmt
+				c.Polluted = true
+			}
+
 			this.extendsFromPrecedingChunk(c)
-			if c.Fmt == 3 && c.Extended == false {
+			if c.CurrentFmt == 3 && c.Extended == false {
 				c.State = States.DATA
 			} else {
 				c.State = States.FMT
@@ -294,7 +299,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 				c.CSID = uint32(b[i])
 				c.State = States.CSID_0
 			default:
-				if c.Fmt == 3 {
+				if c.CurrentFmt == 3 {
 					if c.Extended {
 						c.Timestamp = uint32(b[i]) << 24
 						c.State = States.EXTENDED_TIMESTAMP_0
@@ -311,14 +316,14 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 			c.CSID |= uint32(b[i]) << 8
 			c.CSID += 64
 
-			if c.Fmt == 3 && c.Extended == false {
+			if c.CurrentFmt == 3 && c.Extended == false {
 				c.State = States.DATA
 			} else {
 				c.State = States.CSID_1
 			}
 
 		case States.CSID_1:
-			if c.Fmt == 3 {
+			if c.CurrentFmt == 3 {
 				if c.Extended {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
@@ -337,17 +342,17 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.TIMESTAMP_1:
 			c.Timestamp |= uint32(b[i])
 
-			if c.Fmt == 2 && c.Timestamp != 0xFFFFFF {
+			if c.CurrentFmt == 2 && c.Timestamp != 0xFFFFFF {
 				c.State = States.DATA
 			} else {
 				c.State = States.TIMESTAMP_2
 			}
 
 		case States.TIMESTAMP_2:
-			if c.Fmt == 0 || c.Fmt == 1 {
+			if c.CurrentFmt == 0 || c.CurrentFmt == 1 {
 				c.MessageLength = int(b[i]) << 16
 				c.State = States.MESSAGE_LENGTH_0
-			} else if c.Fmt == 2 {
+			} else if c.CurrentFmt == 2 {
 				if c.Timestamp == 0xFFFFFF {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
@@ -369,17 +374,17 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 		case States.MESSAGE_LENGTH_2:
 			c.MessageTypeID = b[i]
 
-			if c.Fmt == 1 && c.Timestamp != 0xFFFFFF {
+			if c.CurrentFmt == 1 && c.Timestamp != 0xFFFFFF {
 				c.State = States.DATA
 			} else {
 				c.State = States.MESSAGE_TYPE_ID
 			}
 
 		case States.MESSAGE_TYPE_ID:
-			if c.Fmt == 0 {
+			if c.CurrentFmt == 0 {
 				c.MessageStreamID = uint32(b[i])
 				c.State = States.MESSAGE_STREAM_ID_0
-			} else if c.Fmt == 1 {
+			} else if c.CurrentFmt == 1 {
 				if c.Timestamp == 0xFFFFFF {
 					c.Timestamp = uint32(b[i]) << 24
 					c.State = States.EXTENDED_TIMESTAMP_0
@@ -510,6 +515,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.USER_CONTROL:
 		m, _ := UserControlMessage.New()
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -529,6 +536,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.BANDWIDTH:
 		m, _ := BandwidthMessage.New()
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -547,6 +556,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.AUDIO:
 		m, _ := AudioMessage.New()
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -559,6 +570,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.VIDEO:
 		m, _ := VideoMessage.New()
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -573,6 +586,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		fallthrough
 	case Types.DATA:
 		m, _ := DataMessage.New(this.ObjectEncoding)
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -593,6 +608,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		fallthrough
 	case Types.COMMAND:
 		m, _ := CommandMessage.New(this.ObjectEncoding)
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -616,6 +633,8 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 
 	case Types.AGGREGATE:
 		m, _ := AggregateMessage.New()
+		m.Fmt = c.Fmt
+		m.CSID = c.CSID
 		m.Header.Timestamp = c.Timestamp
 		m.Header.StreamID = c.MessageStreamID
 
@@ -692,7 +711,7 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		this.DispatchEvent(CommandEvent.New(m.Name, this, m, &encoder))
 	} else {
 		// Should not return error, this might be an user call
-		fmt.Printf("No handler found of event \"%s\".\n", m.Name)
+		fmt.Printf("No handler found for event \"%s\".\n", m.Name)
 		return nil
 	}
 
@@ -706,7 +725,8 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		return err
 	}
 
-	_, err = this.WriteByChunk(b, CSIDs.COMMAND, &m.Header)
+	//m.CSID = CSIDs.COMMAND
+	_, err = this.WriteByChunk(b, &m.Header)
 	if err != nil {
 		return err
 	}
@@ -846,7 +866,8 @@ func (this *NetConnection) setChunkSize(size int) error {
 		StreamID:  0,
 	}
 
-	_, err = this.WriteByChunk(b, CSIDs.PROTOCOL_CONTROL, &h)
+	//h.CSID = CSIDs.PROTOCOL_CONTROL
+	_, err = this.WriteByChunk(b, &h)
 	if err != nil {
 		return err
 	}

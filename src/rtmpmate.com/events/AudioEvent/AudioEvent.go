@@ -12,17 +12,17 @@ const (
 
 type AudioEvent struct {
 	Event.Event
-	Data *AudioMessage.AudioMessage
+	Message *AudioMessage.AudioMessage
 }
 
-func New(Type string, Target interface{}, data *AudioMessage.AudioMessage) *AudioEvent {
-	return &AudioEvent{Event.Event{Type, Target}, data}
+func New(Type string, Target interface{}, m *AudioMessage.AudioMessage) *AudioEvent {
+	return &AudioEvent{Event.Event{Type, Target}, m}
 }
 
 func (this *AudioEvent) Clone() *AudioEvent {
-	return &AudioEvent{Event.Event{this.Type, this}, this.Data}
+	return &AudioEvent{Event.Event{this.Type, this}, this.Message}
 }
 
 func (this *AudioEvent) ToString() string {
-	return fmt.Sprintf("[AudioEvent type=%s data=%v]", this.Type, this.Data)
+	return fmt.Sprintf("[AudioEvent type=%s data=%v]", this.Type, this.Message)
 }

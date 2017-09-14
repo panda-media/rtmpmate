@@ -3,6 +3,7 @@ package Message
 import (
 	"encoding/binary"
 	"fmt"
+	"rtmpmate.com/net/rtmp/Chunk"
 )
 
 type Message struct {
@@ -11,6 +12,7 @@ type Message struct {
 }
 
 type Header struct {
+	Chunk.BasicHeader
 	Type      byte
 	Length    int // 3 bytes
 	Timestamp uint32

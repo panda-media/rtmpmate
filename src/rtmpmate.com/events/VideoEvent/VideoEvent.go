@@ -12,17 +12,17 @@ const (
 
 type VideoEvent struct {
 	Event.Event
-	Data *VideoMessage.VideoMessage
+	Message *VideoMessage.VideoMessage
 }
 
-func New(Type string, Target interface{}, data *VideoMessage.VideoMessage) *VideoEvent {
-	return &VideoEvent{Event.Event{Type, Target}, data}
+func New(Type string, Target interface{}, m *VideoMessage.VideoMessage) *VideoEvent {
+	return &VideoEvent{Event.Event{Type, Target}, m}
 }
 
 func (this *VideoEvent) Clone() *VideoEvent {
-	return &VideoEvent{Event.Event{this.Type, this}, this.Data}
+	return &VideoEvent{Event.Event{this.Type, this}, this.Message}
 }
 
 func (this *VideoEvent) ToString() string {
-	return fmt.Sprintf("[VideoEvent type=%s data=%v]", this.Type, this.Data)
+	return fmt.Sprintf("[VideoEvent type=%s data=%v]", this.Type, this.Message)
 }

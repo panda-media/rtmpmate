@@ -8,10 +8,13 @@ import (
 type Chunk struct {
 	BasicHeader
 	MessageHeader
-	Extended bool
-	Data     bytes.Buffer
-	Loaded   int
-	State    byte
+	Data bytes.Buffer
+
+	CurrentFmt byte
+	Polluted   bool
+	Extended   bool
+	Loaded     int
+	State      byte
 }
 
 type BasicHeader struct {

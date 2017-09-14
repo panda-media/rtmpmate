@@ -105,11 +105,13 @@ func (this *NetStream) Send(handler string, args ...*AMF.AMFValue) error {
 	} else {
 		h.Type = Types.AMF3_DATA
 	}
+	h.Fmt = 0
+	h.CSID = CSIDs.COMMAND_2
 	h.Length = encoder.Len()
 	h.Timestamp = 0
 	h.StreamID = uint32(this.stream.ID)
 
-	_, err = this.nc.WriteByChunk(b, CSIDs.COMMAND_2, &h)
+	_, err = this.nc.WriteByChunk(b, &h)
 	if err != nil {
 		return err
 	}
@@ -137,24 +139,29 @@ func (this *NetStream) clearDataFrame(e *DataFrameEvent.DataFrameEvent) error {
 }
 
 func (this *NetStream) sendAudio(e *AudioEvent.AudioEvent) error {
-	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
+	_, err := this.nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
 	return err
 }
 
 func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
-	_, err := this.nc.WriteByChunk(e.Data.Payload, CSIDs.COMMAND_2, &e.Data.Header)
-	return err
+	//_, err := this.nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
+	return nil
 }
 
 func (this *NetStream) Close() error {
 	if this.stream != nil {
-		return this.stream.Close()
+		this.stream.Close()
 	}
 
 	return nil
 }
 
 func (this *NetStream) Dispose() error {
+	if this.stream != nil {
+		this.stream.Close()
+		this.stream.Clear()
+	}
+
 	return nil
 }
 
@@ -236,9 +243,10 @@ func (this *NetStream) sendStatus(e *CommandEvent.CommandEvent, info *AMF.AMFObj
 	e.Encoder.EncodeNull()
 	e.Encoder.EncodeObject(info)
 
+	//e.Message.Header.CSID = CSIDs.COMMAND
 	e.Message.Length = e.Encoder.Len()
 	b, _ := e.Encoder.Encode()
-	this.nc.WriteByChunk(b, CSIDs.COMMAND, &e.Message.Header)
+	this.nc.WriteByChunk(b, &e.Message.Header)
 
 	e.Encoder.Reset()
 }
@@ -359,11 +367,11 @@ func (this *NetStream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
 }
 
 func (this *NetStream) onAudio(e *AudioEvent.AudioEvent) {
-	this.stream.DispatchEvent(AudioEvent.New(e.Type, this, e.Data))
+	this.stream.DispatchEvent(AudioEvent.New(e.Type, this, e.Message))
 }
 
 func (this *NetStream) onVideo(e *VideoEvent.VideoEvent) {
-	this.stream.DispatchEvent(VideoEvent.New(e.Type, this, e.Data))
+	this.stream.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 }
 
 func (this *NetStream) onMetaData(e *DataFrameEvent.DataFrameEvent) {
