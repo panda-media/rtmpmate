@@ -2,15 +2,14 @@ package Stream
 
 import (
 	"container/list"
-	"fmt"
+	AACTypes "rtmpmate.com/codec/AAC/Types"
+	"rtmpmate.com/codec/AudioFormats"
+	H264Types "rtmpmate.com/codec/H264/Types"
+	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/VideoEvent"
-	AACTypes "rtmpmate.com/muxer/codec/AAC/Types"
-	"rtmpmate.com/muxer/codec/AudioFormats"
-	H264Types "rtmpmate.com/muxer/codec/H264/Types"
-	"rtmpmate.com/muxer/codec/VideoCodecs"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
@@ -151,8 +150,6 @@ func (this *Stream) Unlink(src Interfaces.IStream) error {
 }
 
 func (this *Stream) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
-
 	this.DataFrames[e.Key] = e.Data
 	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
 }
