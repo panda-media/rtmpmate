@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	urlRe, _ = regexp.Compile("^http[s]?://[a-z0-9.-]+(:[0-9]+)?/([a-z0-9.-_]+)(/([a-z0-9.-_]+))?(/[a-z0-9.-_]+)(.[a-z0-9]+)$")
+	urlRe, _ = regexp.Compile("/([a-z0-9.-_]+)(/([a-z0-9.-_]+))?/([a-z0-9-_]+)(.[a-z0-9]+)$")
 )
 
 type HTTPListener struct {
@@ -47,38 +47,41 @@ func (this *HTTPListener) connHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if arr[4] == "" {
-		arr[4] = "_definst_"
-	}
-	if arr[3] == "" {
-		arr[3] = "/" + arr[4]
+	appName := arr[1]
+	instName := arr[3]
+	streamName := arr[4]
+	extension := arr[5]
+
+	if instName == "" {
+		instName = "_definst_"
 	}
 
-	switch arr[6] {
+	switch extension {
 	case ".mpd":
-		app, err := Application.Get(arr[2])
+		app, err := Application.Get(appName)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
-		inst, _ := app.GetInstance(arr[3])
-		stream, err := inst.GetStream(arr[5])
+		inst, _ := app.GetInstance(instName)
+		stream, err := inst.GetStream(streamName)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
 		mpd, err := stream.DASHMuxer.GetMPD()
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
-		w.Write(mpd)
+		n, err := w.Write(mpd)
+		fmt.Printf("MPD: %d.\n", n)
 
 	default:
-		name := "../www/" + arr[2] + arr[3] + arr[5] + arr[6]
+		name := "www/" + appName + "/" + instName + "/" + streamName + extension
 		http.ServeFile(w, r, name)
 	}
 }

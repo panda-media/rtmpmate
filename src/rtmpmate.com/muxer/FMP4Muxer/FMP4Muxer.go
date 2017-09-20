@@ -10,7 +10,9 @@ import (
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/muxer"
+	"rtmpmate.com/net/rtmp/Interfaces"
 	"strconv"
+	"syscall"
 )
 
 type FMP4Muxer struct {
@@ -49,36 +51,66 @@ func (this *FMP4Muxer) Init(t string) error {
 	return nil
 }
 
+func (this *FMP4Muxer) Source(src Interfaces.IStream) error {
+	if src == nil {
+		return syscall.EINVAL
+	}
+
+	this.Src = src
+	this.Src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.Src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.Src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
+	this.Src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
+
+	meta := this.Src.GetDataFrame("onMetaData")
+	if meta != nil {
+		this.DataFrames["onMetaData"] = meta
+		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	}
+
+	return nil
+}
+
+func (this *FMP4Muxer) Unlink(src Interfaces.IStream) error {
+	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
+	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
+	this.Src = nil
+
+	return nil
+}
+
 func (this *FMP4Muxer) VideoHeaderGenerated(videoHeader []byte) {
 	fmt.Printf("VideoHeaderGenerated\n")
 
-	name := "../www/initV.m4s"
+	name := "www/video_video0_init_mp4.m4s"
 	this.Save(name, videoHeader)
 }
 
 func (this *FMP4Muxer) VideoSegmentGenerated(videoSegment []byte, timestamp int64, duration int) {
 	fmt.Printf("VideoSegmentGenerated\n")
 
-	name := strconv.Itoa(int(timestamp))
+	name := "www/video_video0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
 	this.Save(name, videoSegment)
 }
 
 func (this *FMP4Muxer) AudioHeaderGenerated(audioHeader []byte) {
 	fmt.Printf("AudioHeaderGenerated\n")
 
-	name := "../www/initA.m4s"
+	name := "www/audio_audio0_init_mp4.m4s"
 	this.Save(name, audioHeader)
 }
 
 func (this *FMP4Muxer) AudioSegmentGenerated(audioSegment []byte, timestamp int64, duration int) {
 	fmt.Printf("AudioSegmentGenerated\n")
 
-	name := strconv.Itoa(int(timestamp))
+	name := "www/audio_audio0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
 	this.Save(name, audioSegment)
 }
 
 func (this *FMP4Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
+	fmt.Printf("FMP4Muxer.%s: %s\n", e.Key, e.Data.ToString(0))
 
 	this.DataFrames[e.Key] = e.Data
 	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))

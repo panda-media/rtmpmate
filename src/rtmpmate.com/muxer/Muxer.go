@@ -29,7 +29,7 @@ type Muxer struct {
 	Data               bytes.Buffer
 	LastAudioTimestamp uint32
 	LastVideoTimestamp uint32
-	src                Interfaces.IStream
+	Src                Interfaces.IStream
 	endOfStream        bool
 
 	events.EventDispatcher
@@ -58,13 +58,13 @@ func (this *Muxer) Source(src Interfaces.IStream) error {
 		return syscall.EINVAL
 	}
 
-	this.src = src
-	this.src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
-	this.src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
-	this.src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
-	this.src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
+	this.Src = src
+	this.Src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.Src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.Src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
+	this.Src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 
-	meta := this.src.GetDataFrame("onMetaData")
+	meta := this.Src.GetDataFrame("onMetaData")
 	if meta != nil {
 		this.DataFrames["onMetaData"] = meta
 		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
@@ -78,7 +78,7 @@ func (this *Muxer) Unlink(src Interfaces.IStream) error {
 	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
 	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
-	this.src = nil
+	this.Src = nil
 
 	return nil
 }
@@ -101,7 +101,7 @@ func (this *Muxer) GetInitVideo() *VideoMessage.VideoMessage {
 }
 
 func (this *Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
+	fmt.Printf("Muxer.%s: %s\n", e.Key, e.Data.ToString(0))
 
 	this.DataFrames[e.Key] = e.Data
 	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))

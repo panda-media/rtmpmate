@@ -226,6 +226,7 @@ func (this *Application) onPublish(e *CommandEvent.CommandEvent) {
 		} else {
 			ns.Stream.Type = StreamTypes.PUBLISHING
 			ns.Stream.Sink(stream.Muxer)
+			ns.Stream.Sink(stream.DASHMuxer)
 
 			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
 			ns.SendStatus(e, info)

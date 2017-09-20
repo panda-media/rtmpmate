@@ -39,7 +39,7 @@ func (this *FLVMuxer) Init(t string) error {
 }
 
 func (this *FLVMuxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
+	fmt.Printf("FLVMuxer.%s: %s\n", e.Key, e.Data.ToString(0))
 
 	if this.Record {
 		var encoder AMF.Encoder
