@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	DATA = "audiodata"
+	DATA = "AudioEvent.DATA"
 )
 
 type AudioEvent struct {

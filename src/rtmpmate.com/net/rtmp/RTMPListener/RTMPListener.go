@@ -3,10 +3,8 @@ package RTMPListener
 import (
 	"fmt"
 	"net"
-	"rtmpmate.com/events/CommandEvent"
+	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Handshaker"
-	"rtmpmate.com/net/rtmp/NetConnection"
-	"rtmpmate.com/net/rtmp/NetStream"
 	"strconv"
 )
 
@@ -54,13 +52,13 @@ func (this *RTMPListener) Listen(network string, port int) {
 			continue
 		}
 
-		go this.connHandler(conn)
+		go this.handler(conn)
 	}
 
 	fmt.Printf("%v exiting...\n", this)
 }
 
-func (this *RTMPListener) connHandler(conn *net.TCPConn) {
+func (this *RTMPListener) handler(conn *net.TCPConn) {
 	shaker, err := Handshaker.New(conn)
 	if err != nil {
 		fmt.Printf("Failed to create Handshaker: %v.\n", err)
@@ -74,22 +72,5 @@ func (this *RTMPListener) connHandler(conn *net.TCPConn) {
 		return
 	}
 
-	nc, err := NetConnection.New(conn)
-	if err != nil {
-		fmt.Printf("Failed to create NetConnection: %v.\n", err)
-		return
-	}
-
-	_, err = NetStream.New(nc)
-	if err != nil {
-		fmt.Printf("Failed to create NetStream: %v.\n", err)
-		return
-	}
-
-	err = nc.WaitRequest()
-	if err != nil {
-		fmt.Printf("Failed to wait request: %v.\n", err)
-		nc.DispatchEvent(CommandEvent.New(CommandEvent.CLOSE, this, nil, nil))
-		return
-	}
+	Application.HandshakeComplete(conn)
 }

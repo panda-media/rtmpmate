@@ -11,11 +11,7 @@ import (
 	"rtmpmate.com/events/CommandEvent"
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/Event"
-	"rtmpmate.com/events/NetStatusEvent/Code"
-	"rtmpmate.com/events/NetStatusEvent/Level"
-	"rtmpmate.com/events/ServerEvent"
 	"rtmpmate.com/events/VideoEvent"
-	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Chunk"
 	//"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
@@ -24,7 +20,6 @@ import (
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/BandwidthMessage"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage"
-	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/DataMessage"
 	"rtmpmate.com/net/rtmp/Message/Types"
 	"rtmpmate.com/net/rtmp/Message/UserControlMessage"
@@ -53,7 +48,6 @@ type NetConnection struct {
 	responders        map[int]*Responder.Responder
 
 	Agent             string
-	App               *Application.Application
 	AppName           string
 	AudioCodecs       uint64
 	AudioSampleAccess string
@@ -134,6 +128,11 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	nc.VideoSampleAccess = "/"
 
 	nc.AddEventListener(CommandEvent.CONNECT, nc.onConnect, 0)
+	nc.AddEventListener(CommandEvent.CLOSE, nc.onClose, 0)
+	nc.AddEventListener(CommandEvent.RESULT, nc.onResult, 0)
+	nc.AddEventListener(CommandEvent.ERROR, nc.onError, 0)
+	nc.AddEventListener(CommandEvent.CHECK_BANDWIDTH, nc.onCheckBandwidth, 0)
+	nc.AddEventListener(CommandEvent.GET_STATS, nc.onGetStats, 0)
 
 	return &nc, nil
 }
@@ -248,7 +247,7 @@ func (this *NetConnection) WriteByChunk(b []byte, h *Message.Header) (int, error
 	return h.Length, nil
 }
 
-func (this *NetConnection) WaitRequest() error {
+func (this *NetConnection) Wait() error {
 	var b = make([]byte, 14+4096)
 
 	for {
@@ -705,30 +704,11 @@ func (this *NetConnection) onBandwidth(m *BandwidthMessage.BandwidthMessage) err
 func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 	fmt.Printf("onCommand: name=%s.\n", m.Name)
 
-	var encoder AMF.Encoder
-
 	if this.HasEventListener(m.Name) {
-		this.DispatchEvent(CommandEvent.New(m.Name, this, m, &encoder))
+		this.DispatchEvent(CommandEvent.New(m.Name, this, m))
 	} else {
 		// Should not return error, this might be an user call
 		fmt.Printf("No handler found for event \"%s\".\n", m.Name)
-		return nil
-	}
-
-	m.Length = encoder.Len()
-	if m.Length == 0 {
-		return nil
-	}
-
-	b, err := encoder.Encode()
-	if err != nil {
-		return err
-	}
-
-	//m.CSID = CSIDs.COMMAND
-	_, err = this.WriteByChunk(b, &m.Header)
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -756,77 +736,10 @@ func (this *NetConnection) onConnect(e *CommandEvent.CommandEvent) {
 			}
 		}
 	}
-
-	// Encode response
-	var command, level, code string
-
-	if this.ReadAccess == "/" || this.ReadAccess == "/"+this.AppName {
-		this.App, _ = Application.Get(this.AppName)
-
-		this.AddEventListener(CommandEvent.CLOSE, this.onClose, 0)
-		this.AddEventListener(CommandEvent.RESULT, this.onResult, 0)
-		this.AddEventListener(CommandEvent.ERROR, this.onError, 0)
-		this.AddEventListener(CommandEvent.CHECK_BANDWIDTH, this.onCheckBandwidth, 0)
-		this.AddEventListener(CommandEvent.GET_STATS, this.onGetStats, 0)
-
-		command = Commands.RESULT
-		level = Level.STATUS
-		code = Code.NETCONNECTION_CONNECT_SUCCESS
-	} else {
-		command = Commands.ERROR
-		level = Level.ERROR
-		code = Code.NETCONNECTION_CONNECT_REJECTED
-	}
-
-	e.Encoder.EncodeString(command)
-	e.Encoder.EncodeNumber(1)
-
-	var prop AMF.AMFObject
-	prop.Init()
-	prop.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Key:  "fmsVer",
-		Data: "FMS/5,0,3,3029",
-	})
-	prop.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.DOUBLE,
-		Key:  "capabilities",
-		Data: float64(255),
-	})
-	prop.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.DOUBLE,
-		Key:  "mode",
-		Data: float64(1),
-	})
-	e.Encoder.EncodeObject(&prop)
-
-	var data list.List
-	data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Key:  "version",
-		Data: "5,0,3,3029",
-	})
-
-	info, _ := this.GetInfoObject(level, code, "Connection succeeded")
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.DOUBLE,
-		Key:  "objectEncoding",
-		Data: float64(this.ObjectEncoding),
-	})
-	info.Data.PushBack(&AMF.AMFValue{
-		Type: AMFTypes.ECMA_ARRAY,
-		Key:  "data",
-		Data: data,
-	})
-	e.Encoder.EncodeObject(info)
-
-	// TODO: reject
-	this.Connected = true
-	this.App.DispatchEvent(ServerEvent.New(ServerEvent.CONNECT, this.App, this, nil))
 }
 
 func (this *NetConnection) onClose(e *CommandEvent.CommandEvent) {
-	this.Close()
+	this.Connected = false
 }
 
 func (this *NetConnection) onResult(e *CommandEvent.CommandEvent) {
@@ -847,6 +760,18 @@ func (this *NetConnection) onGetStats(e *Event.Event) {
 
 func (this *NetConnection) onAggregate(m *AggregateMessage.AggregateMessage) error {
 	fmt.Printf("onAggregate: id=%d, timstamp=%d, length=%d.\n", m.StreamID, m.Timestamp, m.Length)
+	return nil
+}
+
+func (this *NetConnection) SendEncodedBuffer(encoder *AMF.Encoder, h Message.Header) error {
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	h.Length = encoder.Len()
+	this.WriteByChunk(b, &h)
+
 	return nil
 }
 
@@ -925,9 +850,7 @@ func (this *NetConnection) Close() error {
 	this.Connected = false
 	err := this.conn.Close()
 
-	if this.App != nil {
-		this.App.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, this.App, this, nil))
-	}
+	this.DispatchEvent(CommandEvent.New(CommandEvent.CLOSE, this, nil))
 
 	return err
 }

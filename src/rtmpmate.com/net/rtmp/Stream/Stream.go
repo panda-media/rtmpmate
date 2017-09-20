@@ -38,8 +38,8 @@ type Stream struct {
 	ReceiveAudio       bool
 	ReceiveVideo       bool
 
-	src Interfaces.IStream
-	to  Interfaces.IStream
+	src Interfaces.IMuxer
+	to  Interfaces.IMuxer
 	events.EventDispatcher
 }
 
@@ -55,7 +55,7 @@ func New(name string) (*Stream, error) {
 	return &s, nil
 }
 
-func (this *Stream) Source(src Interfaces.IStream) error {
+func (this *Stream) Source(src Interfaces.IMuxer) error {
 	if src == nil {
 		return syscall.EINVAL
 	}
@@ -75,7 +75,7 @@ func (this *Stream) Source(src Interfaces.IStream) error {
 	return nil
 }
 
-func (this *Stream) Sink(to Interfaces.IStream) error {
+func (this *Stream) Sink(to Interfaces.IMuxer) error {
 	if to == nil {
 		return syscall.EINVAL
 	}
@@ -139,7 +139,7 @@ func (this *Stream) Close() error {
 	return nil
 }
 
-func (this *Stream) Unlink(src Interfaces.IStream) error {
+func (this *Stream) Unlink(src Interfaces.IMuxer) error {
 	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
 	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)

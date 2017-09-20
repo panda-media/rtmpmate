@@ -2,11 +2,19 @@ package Application
 
 import (
 	"fmt"
+	"net"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/CommandEvent"
-	"rtmpmate.com/events/ServerEvent"
+	"rtmpmate.com/events/NetStatusEvent/Code"
+	"rtmpmate.com/events/NetStatusEvent/Level"
+	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Application/Instance"
-	"rtmpmate.com/net/rtmp/Interfaces"
+	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
+	"rtmpmate.com/net/rtmp/NetConnection"
+	"rtmpmate.com/net/rtmp/NetStream"
+	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
+	"rtmpmate.com/util/AMF"
+	AMFTypes "rtmpmate.com/util/AMF/Types"
 	"sync"
 	"syscall"
 )
@@ -74,70 +82,41 @@ func Get(name string) (*Application, error) {
 
 	appsMtx.Lock()
 
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Printf("Failed to DispatchEvent: %v.\n", err)
-			appsMtx.Unlock()
-		}
-	}()
-
 	app, ok := apps[name]
 	if ok {
 		appsMtx.Unlock()
 		return app, nil
 	}
 
-	var newApp Application
-	newApp.Name = name
-	newApp.instances = make(map[string]*Instance.Instance)
+	var a Application
+	a.Name = name
+	a.instances = make(map[string]*Instance.Instance)
 
-	newApp.AddEventListener(ServerEvent.CONNECT, newApp.onConnect, 0)
-	newApp.AddEventListener(ServerEvent.PUBLISH, newApp.onPublish, 0)
-	newApp.AddEventListener(ServerEvent.UNPUBLISH, newApp.onUnpublish, 0)
-	newApp.AddEventListener(ServerEvent.DISCONNECT, newApp.onDisconnect, 0)
-	newApp.AddEventListener(CommandEvent.GET_STATS, newApp.onGetStats, 0)
-
-	apps[name] = &newApp
+	app = &a
+	apps[name] = app
 	appsMtx.Unlock()
 
-	newApp.onStart()
+	app.onStart()
 
-	return &newApp, nil
+	return app, nil
 }
 
-func (this *Application) Accept(nc *Interfaces.INetConnection) error {
-	return nil
-}
-
-func (this *Application) Reject(nc *Interfaces.INetConnection) error {
-	return nil
-}
-
-func (this *Application) Disconnect(nc *Interfaces.INetConnection) error {
-	return nil
-}
-
-func (this *Application) GetStream(instName string, streamName string, start float64) (Interfaces.IStream, error) {
-	var stream Interfaces.IStream
-	var err error
+func (this *Application) GetInstance(name string) (*Instance.Instance, error) {
+	if name == "" {
+		name = "_definst_"
+	}
 
 	this.instancesMtx.Lock()
 
-	inst, ok := this.instances[instName]
-	if ok {
-		stream, err = inst.GetStream(streamName, start)
-	} else {
-		stream = nil
-		err = fmt.Errorf("instance (name=%s) not found", instName)
+	inst, ok := this.instances[name]
+	if ok == false {
+		inst, _ = Instance.New(name)
+		this.instances[name] = inst
 	}
 
 	this.instancesMtx.Unlock()
 
-	return stream, err
-}
-
-func (this *Application) GC() {
-
+	return inst, nil
 }
 
 func (this *Application) Shutdown() {
@@ -151,56 +130,197 @@ func (this *Application) Shutdown() {
 	this.instancesMtx.Unlock()
 }
 
+func (this *Application) GetStats() *stats {
+	return &this.stats
+}
+
 func (this *Application) onStart() {
 
 }
 
-func (this *Application) onConnect(e *ServerEvent.ServerEvent) {
-	fmt.Printf("Application.onConnect: id=%s.\n", e.Client.GetFarID())
-
-	this.instancesMtx.Lock()
-
-	instName := e.Client.GetInstName()
-	inst, ok := this.instances[instName]
-	if ok == false {
-		inst, _ = Instance.New(instName)
-		this.instances[instName] = inst
-	}
-	inst.DispatchEvent(ServerEvent.New(ServerEvent.CONNECT, inst, e.Client, nil))
-
-	this.connected++
-
-	this.instancesMtx.Unlock()
-}
-
-func (this *Application) onPublish(e *ServerEvent.ServerEvent) {
-
-}
-
-func (this *Application) onUnpublish(e *ServerEvent.ServerEvent) {
-
-}
-
-func (this *Application) onDisconnect(e *ServerEvent.ServerEvent) {
-	fmt.Printf("Application.onDisconnect: id=%s.\n", e.Client.GetFarID())
-
-	this.instancesMtx.Lock()
-
-	instName := e.Client.GetInstName()
-	inst, ok := this.instances[instName]
-	if ok {
-		inst.DispatchEvent(ServerEvent.New(ServerEvent.DISCONNECT, inst, e.Client, nil))
-	}
-
-	this.connected--
-
-	this.instancesMtx.Unlock()
-}
-
-func (this *Application) onGetStats(e *CommandEvent.CommandEvent) {
-
-}
-
 func (this *Application) onStop() {
+
+}
+
+func HandshakeComplete(conn *net.TCPConn) {
+	nc, err := NetConnection.New(conn)
+	if err != nil {
+		fmt.Printf("Failed to create NetConnection: %v.\n", err)
+		return
+	}
+
+	nc.AddEventListener(CommandEvent.CONNECT, onConnect, 0)
+	nc.AddEventListener(CommandEvent.CREATE_STREAM, onCreateStream, 0)
+	nc.AddEventListener(CommandEvent.CLOSE, onDisconnect, 0)
+	nc.Wait()
+}
+
+func onConnect(e *CommandEvent.CommandEvent) {
+	nc := e.Target.(*NetConnection.NetConnection)
+	fmt.Printf("Application.onConnect: id=%s.\n", nc.FarID)
+
+	var encoder AMF.Encoder
+	var info *AMF.AMFObject
+	if nc.ReadAccess == "/" || nc.ReadAccess == "/"+nc.AppName {
+		Accept(nc)
+
+		encoder.EncodeString(Commands.RESULT)
+		info, _ = nc.GetInfoObject(Level.STATUS, Code.NETCONNECTION_CONNECT_SUCCESS, "connect success")
+	} else {
+		Reject(nc)
+
+		encoder.EncodeString(Commands.ERROR)
+		info, _ = nc.GetInfoObject(Level.ERROR, Code.NETCONNECTION_CONNECT_REJECTED, "connect reject")
+	}
+
+	encoder.EncodeNumber(1)
+	encoder.EncodeObject(&rtmp.FMSProperties)
+
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.DOUBLE,
+		Key:  "objectEncoding",
+		Data: float64(nc.ObjectEncoding),
+	})
+	info.Data.PushBack(&AMF.AMFValue{
+		Type: AMFTypes.ECMA_ARRAY,
+		Key:  "data",
+		Data: rtmp.FMSVersion,
+	})
+	encoder.EncodeObject(info)
+
+	nc.SendEncodedBuffer(&encoder, e.Message.Header)
+}
+
+func onCreateStream(e *CommandEvent.CommandEvent) {
+	nc := e.Target.(*NetConnection.NetConnection)
+	ns, err := NetStream.New(nc)
+	if err != nil {
+		fmt.Printf("Failed to create NetStream: %v.\n", err)
+		return
+	}
+
+	app, err := Get(nc.AppName)
+	if err != nil {
+		fmt.Printf("Failed to get application: %v.\n", err)
+		return
+	}
+
+	ns.AddEventListener(CommandEvent.PUBLISH, app.onPublish, 0)
+	ns.AddEventListener(CommandEvent.PLAY, app.onPlay, 0)
+	ns.AddEventListener(CommandEvent.CLOSE, app.onUnpublish, 0)
+}
+
+func (this *Application) onPublish(e *CommandEvent.CommandEvent) {
+	ns := e.Target.(*NetStream.NetStream)
+	fmt.Printf("Application.onPublish: stream=%s.\n", ns.Stream.Name)
+
+	if nc := ns.Nc; nc.WriteAccess == "/" || nc.WriteAccess == "/"+nc.AppName {
+		inst, _ := this.GetInstance(nc.InstName)
+		stream, _ := inst.GetStream(ns.Stream.Name)
+		if stream == nil {
+			info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_FAILED, "Internal error")
+			ns.SendStatus(e, info)
+		} else if stream.Type == StreamTypes.PUBLISHING {
+			info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PUBLISH_BADNAME, "Publish bad name")
+			ns.SendStatus(e, info)
+		} else {
+			ns.Stream.Type = StreamTypes.PUBLISHING
+			ns.Stream.Sink(stream.Muxer)
+
+			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
+			ns.SendStatus(e, info)
+		}
+	} else {
+		info, _ := nc.GetInfoObject(Level.ERROR, "No write access", "No write access")
+		ns.SendStatus(e, info)
+	}
+}
+
+func (this *Application) onPlay(e *CommandEvent.CommandEvent) {
+	ns := e.Target.(*NetStream.NetStream)
+	fmt.Printf("Application.onPlay: stream=%s.\n", ns.Stream.Name)
+
+	if nc := ns.Nc; nc.ReadAccess == "/" || nc.ReadAccess == "/"+nc.AppName {
+		inst, _ := this.GetInstance(nc.InstName)
+		stream, _ := inst.GetStream(ns.Stream.Name)
+		if stream != nil {
+			if stream.Type == StreamTypes.PLAYING_VOD {
+				ns.Stream.Type = StreamTypes.PLAYING_VOD
+			} else {
+				ns.Stream.Type = StreamTypes.PLAYING_LIVE
+			}
+			ns.Stream.Source(stream.Muxer)
+
+			if e.Message.Reset {
+				info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
+				ns.SendStatus(e, info)
+			}
+
+			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
+			ns.SendStatus(e, info)
+		} else {
+			info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_STREAMNOTFOUND, "Stream not found")
+			ns.SendStatus(e, info)
+		}
+	} else {
+		info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_FAILED, "No read access")
+		ns.SendStatus(e, info)
+	}
+}
+
+func (this *Application) onUnpublish(e *CommandEvent.CommandEvent) {
+	ns := e.Target.(*NetStream.NetStream)
+	fmt.Printf("Application.onUnpublish: stream=%s.\n", ns.Stream.Name)
+
+	inst, _ := this.GetInstance(ns.Nc.InstName)
+	stream, _ := inst.GetStream(ns.Stream.Name)
+	if stream != nil {
+		stream.Muxer.EndOfStream("unpublish")
+	}
+}
+
+func onDisconnect(e *CommandEvent.CommandEvent) {
+	nc := e.Target.(*NetConnection.NetConnection)
+	fmt.Printf("Application.onDisconnect: id=%s.\n", nc.FarID)
+
+	Disconnect(nc)
+}
+
+func Accept(nc *NetConnection.NetConnection) error {
+	app, err := Get(nc.AppName)
+	if err != nil {
+		return err
+	}
+
+	inst, err := app.GetInstance(nc.InstName)
+	inst.Add(nc)
+
+	nc.Connected = true
+
+	return nil
+}
+
+func Reject(nc *NetConnection.NetConnection) error {
+	nc.Close()
+	nc.Connected = false
+
+	return nil
+}
+
+func Disconnect(nc *NetConnection.NetConnection) error {
+	nc.Close()
+
+	app, err := Get(nc.AppName)
+	if err != nil {
+		return err
+	}
+
+	inst, err := app.GetInstance(nc.InstName)
+	inst.Remove(nc)
+
+	return nil
+}
+
+func GC() {
 
 }

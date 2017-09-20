@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	DATA = "videodata"
+	DATA = "VideoEvent.DATA"
 )
 
 type VideoEvent struct {

@@ -5,13 +5,15 @@ import (
 )
 
 const (
-	CANCEL   = "cancel"
-	CHANGE   = "change"
-	CLEAR    = "clear"
-	CLOSE    = "close"
-	COMPLETE = "complete"
-	CONNECT  = "connect"
-	RESIZE   = "resize"
+	CANCEL    = "Event.cancel"
+	CHANGE    = "Event.change"
+	CLEAR     = "Event.clear"
+	CLOSE     = "Event.close"
+	COMPLETE  = "Event.complete"
+	CONNECT   = "Event.connect"
+	PUBLISH   = "Event.publish"
+	UNPUBLISH = "Event.unpublish"
+	RESIZE    = "Event.resize"
 )
 
 type Event struct {

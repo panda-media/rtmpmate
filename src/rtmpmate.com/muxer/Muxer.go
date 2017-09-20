@@ -2,9 +2,17 @@ package muxer
 
 import (
 	"bytes"
+	"fmt"
+	AACTypes "rtmpmate.com/codec/AAC/Types"
+	"rtmpmate.com/codec/AudioFormats"
+	H264Types "rtmpmate.com/codec/H264/Types"
+	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/NetStatusEvent"
+	"rtmpmate.com/events/NetStatusEvent/Code"
+	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
@@ -13,37 +21,33 @@ import (
 	"syscall"
 )
 
-type IMuxer interface {
-	Source(src Interfaces.IStream) error
-	IsTypeSupported(mime string) bool
-	EndOfStream(explain string)
-
-	GetDataFrame(name string) *AMF.AMFObject
-	GetInitAudio() *AudioMessage.AudioMessage
-	GetInitVideo() *VideoMessage.VideoMessage
-
-	Interfaces.IEventDispatcher
-}
-
 type Muxer struct {
-	src         Interfaces.IStream
-	DataFrames  map[string]*AMF.AMFObject
-	InitAudio   *AudioMessage.AudioMessage
-	InitVideo   *VideoMessage.VideoMessage
-	Data        bytes.Buffer
-	endOfStream bool
+	Type               string
+	DataFrames         map[string]*AMF.AMFObject
+	InitAudio          *AudioMessage.AudioMessage
+	InitVideo          *VideoMessage.VideoMessage
+	Data               bytes.Buffer
+	LastAudioTimestamp uint32
+	LastVideoTimestamp uint32
+	src                Interfaces.IStream
+	endOfStream        bool
 
 	events.EventDispatcher
 }
 
 func New() (*Muxer, error) {
 	var m Muxer
-	m.Init()
+
+	err := m.Init("Muxer")
+	if err != nil {
+		return nil, err
+	}
 
 	return &m, nil
 }
 
-func (this *Muxer) Init() error {
+func (this *Muxer) Init(t string) error {
+	this.Type = t
 	this.DataFrames = make(map[string]*AMF.AMFObject)
 
 	return nil
@@ -60,15 +64,27 @@ func (this *Muxer) Source(src Interfaces.IStream) error {
 	this.src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
 	this.src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 
+	meta := this.src.GetDataFrame("onMetaData")
+	if meta != nil {
+		this.DataFrames["onMetaData"] = meta
+		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	}
+
+	return nil
+}
+
+func (this *Muxer) Unlink(src Interfaces.IStream) error {
+	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
+	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
+	this.src = nil
+
 	return nil
 }
 
 func (this *Muxer) IsTypeSupported(mime string) bool {
 	return true
-}
-
-func (this *Muxer) EndOfStream(explain string) {
-	this.endOfStream = true
 }
 
 func (this *Muxer) GetDataFrame(name string) *AMF.AMFObject {
@@ -85,17 +101,44 @@ func (this *Muxer) GetInitVideo() *VideoMessage.VideoMessage {
 }
 
 func (this *Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
+	fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
 
+	this.DataFrames[e.Key] = e.Data
+	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
 }
 
 func (this *Muxer) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-
+	delete(this.DataFrames, e.Key)
+	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
 }
 
 func (this *Muxer) onAudio(e *AudioEvent.AudioEvent) {
+	if this.InitAudio == nil {
+		if e.Message.Format == AudioFormats.AAC && e.Message.DataType == AACTypes.SPECIFIC_CONFIG {
+			this.InitAudio = e.Message
+		}
+	}
 
+	this.LastAudioTimestamp = e.Message.Timestamp
+	this.DispatchEvent(AudioEvent.New(AudioEvent.DATA, this, e.Message))
 }
 
 func (this *Muxer) onVideo(e *VideoEvent.VideoEvent) {
+	if this.InitVideo == nil {
+		if e.Message.Codec == VideoCodecs.AVC && e.Message.DataType == H264Types.SEQUENCE_HEADER {
+			this.InitVideo = e.Message
+		}
+	}
 
+	this.LastVideoTimestamp = e.Message.Timestamp
+	this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, e.Message))
+}
+
+func (this *Muxer) EndOfStream(explain string) {
+	this.endOfStream = true
+	this.DispatchEvent(NetStatusEvent.New(NetStatusEvent.NET_STATUS, this, map[string]interface{}{
+		"level":       Level.STATUS,
+		"code":        Code.NETSTREAM_PLAY_STOP,
+		"description": "play stop",
+	}))
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"rtmpmate.com/events/Event"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage"
-	"rtmpmate.com/util/AMF"
 )
 
 const (
@@ -32,17 +31,16 @@ const (
 type CommandEvent struct {
 	Event.Event
 	Message *CommandMessage.CommandMessage
-	Encoder *AMF.Encoder
 }
 
-func New(Type string, Target interface{}, m *CommandMessage.CommandMessage, encoder *AMF.Encoder) *CommandEvent {
-	return &CommandEvent{Event.Event{Type, Target}, m, encoder}
+func New(Type string, Target interface{}, m *CommandMessage.CommandMessage) *CommandEvent {
+	return &CommandEvent{Event.Event{Type, Target}, m}
 }
 
 func (this *CommandEvent) Clone() *CommandEvent {
-	return &CommandEvent{Event.Event{this.Type, this}, this.Message, this.Encoder}
+	return &CommandEvent{Event.Event{this.Type, this}, this.Message}
 }
 
 func (this *CommandEvent) ToString() string {
-	return fmt.Sprintf("[CommandEvent type=%s message=%v encoder=%v]", this.Type, this.Message, this.Encoder)
+	return fmt.Sprintf("[CommandEvent type=%s message=%v]", this.Type, this.Message)
 }

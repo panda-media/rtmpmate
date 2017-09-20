@@ -1,21 +1,24 @@
 package Instance
 
 import (
-	"fmt"
 	"rtmpmate.com/events"
-	"rtmpmate.com/events/CommandEvent"
-	"rtmpmate.com/events/ServerEvent"
-	"rtmpmate.com/net/rtmp/Interfaces"
-	"rtmpmate.com/net/rtmp/Stream"
+	"rtmpmate.com/muxer"
+	"rtmpmate.com/muxer/DASHMuxer"
+	"rtmpmate.com/muxer/FLVMuxer"
+	"rtmpmate.com/muxer/FMP4Muxer"
+	"rtmpmate.com/muxer/HLSMuxer"
+	"rtmpmate.com/net/rtmp/NetConnection"
+	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
 	"sync"
+	"syscall"
 )
 
 type Instance struct {
 	Name string
 
-	clients    map[string]Interfaces.INetConnection
+	clients    map[string]*NetConnection.NetConnection
 	clientsMtx sync.RWMutex
-	streams    map[string]Interfaces.IStream
+	streams    map[string]*Instream
 	streamsMtx sync.RWMutex
 
 	statsToAdmin
@@ -56,6 +59,16 @@ type statsToAdmin struct {
 	swfVerificationFailures int
 }
 
+type Instream struct {
+	Name      string
+	Type      string
+	Muxer     *muxer.Muxer
+	FLVMuxer  *FLVMuxer.FLVMuxer
+	HLSMuxer  *HLSMuxer.HLSMuxer
+	FMP4Muxer *FMP4Muxer.FMP4Muxer
+	DASHMuxer *DASHMuxer.DASHMuxer
+}
+
 func New(name string) (*Instance, error) {
 	if name == "" {
 		name = "_definst_"
@@ -63,75 +76,78 @@ func New(name string) (*Instance, error) {
 
 	var inst Instance
 	inst.Name = name
-	inst.clients = make(map[string]Interfaces.INetConnection)
-	inst.streams = make(map[string]Interfaces.IStream)
-
-	inst.AddEventListener(ServerEvent.CONNECT, inst.onConnect, 0)
-	inst.AddEventListener(ServerEvent.DISCONNECT, inst.onDisconnect, 0)
+	inst.clients = make(map[string]*NetConnection.NetConnection)
+	inst.streams = make(map[string]*Instream)
 
 	return &inst, nil
 }
 
-func (this *Instance) GetStream(name string, start float64) (Interfaces.IStream, error) {
-	var err error = nil
+func (this *Instance) GetStream(name string) (*Instream, error) {
+	if name == "" {
+		return nil, syscall.EINVAL
+	}
 
 	this.streamsMtx.Lock()
 
-	stream, ok := this.streams[name]
+	s, ok := this.streams[name]
 	if ok == false {
-		if start == -2 {
-			stream, err = Stream.New(name)
-			if stream != nil {
-				this.streams[name] = stream
-			}
-		}
-	}
+		var ins Instream
+		ins.Name = name
+		ins.Type = StreamTypes.IDLE
+		ins.Muxer, _ = muxer.New()
+		ins.FLVMuxer, _ = FLVMuxer.New()
+		ins.HLSMuxer, _ = HLSMuxer.New()
+		ins.FMP4Muxer, _ = FMP4Muxer.New()
+		ins.DASHMuxer, _ = DASHMuxer.New()
 
-	if stream == nil {
-		err = fmt.Errorf("stream (name=%s) not found", name)
+		s = &ins
+		this.streams[name] = s
 	}
 
 	this.streamsMtx.Unlock()
 
-	return stream, err
+	return s, nil
 }
 
 func (this *Instance) Unload() {
 	this.clientsMtx.Lock()
-
 	for _, nc := range this.clients {
-		this.RemoveEventListener(ServerEvent.CONNECT, this.onConnect)
-		this.RemoveEventListener(ServerEvent.DISCONNECT, this.onDisconnect)
 		nc.Close()
-
-		delete(this.clients, nc.GetFarID())
+		delete(this.clients, nc.FarID)
 	}
-
 	this.clientsMtx.Unlock()
+
+	explain := "unloading instance"
+	this.streamsMtx.Lock()
+	for _, s := range this.streams {
+		s.Muxer.EndOfStream(explain)
+		s.FLVMuxer.EndOfStream(explain)
+		s.HLSMuxer.EndOfStream(explain)
+		s.FMP4Muxer.EndOfStream(explain)
+		s.DASHMuxer.EndOfStream(explain)
+		delete(this.streams, s.Name)
+	}
+	this.streamsMtx.Unlock()
 }
 
-func (this *Instance) onConnect(e *ServerEvent.ServerEvent) {
+func (this *Instance) GetStats() *stats {
+	return &this.stats
+}
+
+func (this *Instance) Add(nc *NetConnection.NetConnection) {
 	this.clientsMtx.Lock()
 
-	farID := e.Client.GetFarID()
-	this.clients[farID] = e.Client
-
+	this.clients[nc.FarID] = nc
 	this.connected++
 
 	this.clientsMtx.Unlock()
 }
 
-func (this *Instance) onDisconnect(e *ServerEvent.ServerEvent) {
+func (this *Instance) Remove(nc *NetConnection.NetConnection) {
 	this.clientsMtx.Lock()
 
-	farID := e.Client.GetFarID()
-	delete(this.clients, farID)
-
+	delete(this.clients, nc.FarID)
 	this.connected--
 
 	this.clientsMtx.Unlock()
-}
-
-func (this *Instance) onGetStats(e *CommandEvent.CommandEvent) {
-
 }

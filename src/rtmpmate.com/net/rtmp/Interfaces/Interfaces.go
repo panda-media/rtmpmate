@@ -34,8 +34,8 @@ type INetConnection interface {
 type IStream interface {
 	io.Closer
 
-	Source(src IStream) error
-	Sink(to IStream) error
+	Source(src IMuxer) error
+	Sink(to IMuxer) error
 	Play(name string, start float64, length float64, reset bool) error
 	Record(mode string, maxDuration int, maxSize int) error
 	Send(handler string, args ...*AMF.AMFValue) error
@@ -43,7 +43,7 @@ type IStream interface {
 	GetInitAudio() *AudioMessage.AudioMessage
 	GetInitVideo() *VideoMessage.VideoMessage
 	Clear() error
-	Unlink(src IStream) error
+	Unlink(src IMuxer) error
 
 	IEventDispatcher
 }
@@ -61,6 +61,19 @@ type INetStream interface {
 	Publish(name string, t string) error
 	Send(handler string, args ...*AMF.AMFValue) error
 	Dispose() error
+
+	IEventDispatcher
+}
+
+type IMuxer interface {
+	Source(src IStream) error
+	Unlink(src IStream) error
+	IsTypeSupported(mime string) bool
+	EndOfStream(explain string)
+
+	GetDataFrame(name string) *AMF.AMFObject
+	GetInitAudio() *AudioMessage.AudioMessage
+	GetInitVideo() *VideoMessage.VideoMessage
 
 	IEventDispatcher
 }
