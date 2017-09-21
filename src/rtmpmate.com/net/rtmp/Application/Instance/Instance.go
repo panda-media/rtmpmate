@@ -7,6 +7,7 @@ import (
 	"rtmpmate.com/muxer/FLVMuxer"
 	"rtmpmate.com/muxer/FMP4Muxer"
 	"rtmpmate.com/muxer/HLSMuxer"
+	MuxerTypes "rtmpmate.com/muxer/Types"
 	RTMP "rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/NetConnection"
 	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
@@ -109,6 +110,12 @@ func (this *Instance) GetStream(name string) (*Instream, error) {
 
 		s = &ins
 		this.streams[name] = s
+	} else {
+		s.Muxer.Init(this.dir, name, MuxerTypes.RTMP)
+		s.FLVMuxer.Init(this.dir, name, MuxerTypes.FLV)
+		s.HLSMuxer.Init(this.dir, name, MuxerTypes.HLS)
+		s.FMP4Muxer.Init(this.dir, name, MuxerTypes.FMP4)
+		s.DASHMuxer.Init(this.dir, name, MuxerTypes.DASH)
 	}
 
 	this.streamsMtx.Unlock()

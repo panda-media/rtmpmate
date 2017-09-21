@@ -7,6 +7,7 @@ import (
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/format/FLV"
 	"rtmpmate.com/muxer"
+	MuxerTypes "rtmpmate.com/muxer/Types"
 	"rtmpmate.com/util/AMF"
 )
 
@@ -18,7 +19,7 @@ type FLVMuxer struct {
 func New(dir string, name string) (*FLVMuxer, error) {
 	var m FLVMuxer
 
-	err := m.Init(dir, name, "FLVMuxer")
+	err := m.Init(dir, name, MuxerTypes.FLV)
 	if err != nil {
 		return nil, err
 	}

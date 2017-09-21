@@ -3,6 +3,7 @@ package muxer
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	AACTypes "rtmpmate.com/codec/AAC/Types"
 	"rtmpmate.com/codec/AudioFormats"
@@ -15,6 +16,7 @@ import (
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/events/VideoEvent"
+	MuxerTypes "rtmpmate.com/muxer/Types"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
@@ -41,7 +43,7 @@ type Muxer struct {
 func New(dir string, name string) (*Muxer, error) {
 	var m Muxer
 
-	err := m.Init(dir, name, "Muxer")
+	err := m.Init(dir, name, MuxerTypes.RTMP)
 	if err != nil {
 		return nil, err
 	}
@@ -153,4 +155,22 @@ func (this *Muxer) EndOfStream(explain string) {
 		"code":        Code.NETSTREAM_PLAY_STOP,
 		"description": "play stop",
 	}))
+}
+
+func (this *Muxer) Save(name string, data []byte) error {
+	var (
+		f   *os.File
+		err error
+	)
+
+	if _, err = os.Stat(name); os.IsNotExist(err) {
+		f, err = os.Create(name)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = io.WriteString(f, string(data))
+
+	return err
 }

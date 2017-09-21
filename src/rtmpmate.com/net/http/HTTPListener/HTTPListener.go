@@ -70,6 +70,11 @@ func (this *HTTPListener) connHandler(w http.ResponseWriter, r *http.Request) {
 			this.serveMPD(w, r, appName, instName, streamName, fileName)
 			return
 
+		case ".m4s":
+			name := RTMP.APPLICATIONS + appName + "/" + instName + "/" + streamName + "/m4s/" + fileName + extension
+			http.ServeFile(w, r, name)
+			return
+
 		default:
 			name := RTMP.APPLICATIONS + appName + "/" + instName + "/" + streamName + "/" + fileName + extension
 			http.ServeFile(w, r, name)

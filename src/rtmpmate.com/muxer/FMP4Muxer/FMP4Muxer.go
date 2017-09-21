@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"github.com/panda-media/muxer-fmp4/codec/H264"
 	"github.com/panda-media/muxer-fmp4/dashSlicer"
-	"io"
-	"os"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataFrameEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/muxer"
+	MuxerTypes "rtmpmate.com/muxer/Types"
 	"rtmpmate.com/net/rtmp/Interfaces"
-	"strconv"
 	"syscall"
 )
 
@@ -27,7 +25,7 @@ type FMP4Muxer struct {
 func New(dir string, name string) (*FMP4Muxer, error) {
 	var m FMP4Muxer
 
-	err := m.Init(dir, name, "FMP4Muxer")
+	err := m.Init(dir, name, MuxerTypes.FMP4)
 	if err != nil {
 		return nil, err
 	}
@@ -82,31 +80,19 @@ func (this *FMP4Muxer) Unlink(src Interfaces.IStream) error {
 }
 
 func (this *FMP4Muxer) VideoHeaderGenerated(videoHeader []byte) {
-	fmt.Printf("VideoHeaderGenerated\n")
-
-	name := this.Dir + "video_video0_init_mp4.m4s"
-	this.Save(name, videoHeader)
+	fmt.Printf("FMP4Muxer.VideoHeaderGenerated\n")
 }
 
 func (this *FMP4Muxer) VideoSegmentGenerated(videoSegment []byte, timestamp int64, duration int) {
-	fmt.Printf("VideoSegmentGenerated\n")
-
-	name := this.Dir + "video_video0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
-	this.Save(name, videoSegment)
+	fmt.Printf("FMP4Muxer.VideoSegmentGenerated\n")
 }
 
 func (this *FMP4Muxer) AudioHeaderGenerated(audioHeader []byte) {
-	fmt.Printf("AudioHeaderGenerated\n")
-
-	name := this.Dir + "audio_audio0_init_mp4.m4s"
-	this.Save(name, audioHeader)
+	fmt.Printf("FMP4Muxer.AudioHeaderGenerated\n")
 }
 
 func (this *FMP4Muxer) AudioSegmentGenerated(audioSegment []byte, timestamp int64, duration int) {
-	fmt.Printf("AudioSegmentGenerated\n")
-
-	name := this.Dir + "audio_audio0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
-	this.Save(name, audioSegment)
+	fmt.Printf("FMP4Muxer.AudioSegmentGenerated\n")
 }
 
 func (this *FMP4Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
@@ -174,24 +160,6 @@ func (this *FMP4Muxer) onVideo(e *VideoEvent.VideoEvent) {
 
 	this.LastVideoTimestamp = e.Message.Timestamp
 	this.DispatchEvent(VideoEvent.New(VideoEvent.DATA, this, e.Message))
-}
-
-func (this *FMP4Muxer) Save(name string, data []byte) error {
-	var (
-		f   *os.File
-		err error
-	)
-
-	if _, err = os.Stat(name); os.IsNotExist(err) {
-		f, err = os.Create(name)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = io.WriteString(f, string(data))
-
-	return err
 }
 
 func (this *FMP4Muxer) EndOfStream(explain string) {

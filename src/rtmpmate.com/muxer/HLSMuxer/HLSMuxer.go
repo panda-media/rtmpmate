@@ -2,6 +2,7 @@ package HLSMuxer
 
 import (
 	"rtmpmate.com/muxer/FMP4Muxer"
+	MuxerTypes "rtmpmate.com/muxer/Types"
 	"syscall"
 )
 
@@ -12,7 +13,7 @@ type HLSMuxer struct {
 func New(dir string, name string) (*HLSMuxer, error) {
 	var m HLSMuxer
 
-	err := m.Init(dir, name, "HLSMuxer")
+	err := m.Init(dir, name, MuxerTypes.HLS)
 	if err != nil {
 		return nil, err
 	}
