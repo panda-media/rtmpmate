@@ -37,7 +37,7 @@ func (this *DASHMuxer) Init(dir string, name string, t string) error {
 		return err
 	}
 
-	this.Slicer, err = dashSlicer.NEWSlicer(0, 8, 5, 1000, this)
+	this.Slicer, err = dashSlicer.NEWSlicer(1000, 8000, 5, 1000, this)
 	if err != nil {
 		return err
 	}
