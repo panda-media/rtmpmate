@@ -3,6 +3,7 @@ package muxer
 import (
 	"bytes"
 	"fmt"
+	"os"
 	AACTypes "rtmpmate.com/codec/AAC/Types"
 	"rtmpmate.com/codec/AudioFormats"
 	H264Types "rtmpmate.com/codec/H264/Types"
@@ -22,6 +23,8 @@ import (
 )
 
 type Muxer struct {
+	Dir                string
+	Name               string
 	Type               string
 	DataFrames         map[string]*AMF.AMFObject
 	InitAudio          *AudioMessage.AudioMessage
@@ -35,10 +38,10 @@ type Muxer struct {
 	events.EventDispatcher
 }
 
-func New() (*Muxer, error) {
+func New(dir string, name string) (*Muxer, error) {
 	var m Muxer
 
-	err := m.Init("Muxer")
+	err := m.Init(dir, name, "Muxer")
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +49,18 @@ func New() (*Muxer, error) {
 	return &m, nil
 }
 
-func (this *Muxer) Init(t string) error {
+func (this *Muxer) Init(dir string, name string, t string) error {
+	this.Dir = dir + name + "/"
+	this.Name = name
 	this.Type = t
 	this.DataFrames = make(map[string]*AMF.AMFObject)
+
+	if _, err := os.Stat(this.Dir); os.IsNotExist(err) {
+		err = os.MkdirAll(this.Dir, os.ModeDir)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

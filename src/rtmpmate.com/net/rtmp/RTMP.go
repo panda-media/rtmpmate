@@ -6,6 +6,10 @@ import (
 	AMFTypes "rtmpmate.com/util/AMF/Types"
 )
 
+const (
+	APPLICATIONS = "applications/"
+)
+
 var (
 	FMSProperties AMF.AMFObject
 	FMSVersion    list.List

@@ -15,10 +15,10 @@ type FLVMuxer struct {
 	Record bool
 }
 
-func New() (*FLVMuxer, error) {
+func New(dir string, name string) (*FLVMuxer, error) {
 	var m FLVMuxer
 
-	err := m.Init("FLVMuxer")
+	err := m.Init(dir, name, "FLVMuxer")
 	if err != nil {
 		return nil, err
 	}
@@ -26,8 +26,8 @@ func New() (*FLVMuxer, error) {
 	return &m, nil
 }
 
-func (this *FLVMuxer) Init(t string) error {
-	err := this.Muxer.Init(t)
+func (this *FLVMuxer) Init(dir string, name string, t string) error {
+	err := this.Muxer.Init(dir, name, t)
 	if err != nil {
 		return err
 	}

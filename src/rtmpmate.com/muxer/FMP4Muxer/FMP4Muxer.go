@@ -24,10 +24,10 @@ type FMP4Muxer struct {
 	Record          bool
 }
 
-func New() (*FMP4Muxer, error) {
+func New(dir string, name string) (*FMP4Muxer, error) {
 	var m FMP4Muxer
 
-	err := m.Init("FMP4Muxer")
+	err := m.Init(dir, name, "FMP4Muxer")
 	if err != nil {
 		return nil, err
 	}
@@ -35,13 +35,13 @@ func New() (*FMP4Muxer, error) {
 	return &m, nil
 }
 
-func (this *FMP4Muxer) Init(t string) error {
-	err := this.Muxer.Init(t)
+func (this *FMP4Muxer) Init(dir string, name string, t string) error {
+	err := this.Muxer.Init(dir, name, t)
 	if err != nil {
 		return err
 	}
 
-	this.Slicer, err = dashSlicer.NEWSlicer(0, 8, 5, this)
+	this.Slicer, err = dashSlicer.NEWSlicer(0, 8, 5, 1000, this)
 	if err != nil {
 		return err
 	}
@@ -84,28 +84,28 @@ func (this *FMP4Muxer) Unlink(src Interfaces.IStream) error {
 func (this *FMP4Muxer) VideoHeaderGenerated(videoHeader []byte) {
 	fmt.Printf("VideoHeaderGenerated\n")
 
-	name := "www/video_video0_init_mp4.m4s"
+	name := this.Dir + "video_video0_init_mp4.m4s"
 	this.Save(name, videoHeader)
 }
 
 func (this *FMP4Muxer) VideoSegmentGenerated(videoSegment []byte, timestamp int64, duration int) {
 	fmt.Printf("VideoSegmentGenerated\n")
 
-	name := "www/video_video0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
+	name := this.Dir + "video_video0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
 	this.Save(name, videoSegment)
 }
 
 func (this *FMP4Muxer) AudioHeaderGenerated(audioHeader []byte) {
 	fmt.Printf("AudioHeaderGenerated\n")
 
-	name := "www/audio_audio0_init_mp4.m4s"
+	name := this.Dir + "audio_audio0_init_mp4.m4s"
 	this.Save(name, audioHeader)
 }
 
 func (this *FMP4Muxer) AudioSegmentGenerated(audioSegment []byte, timestamp int64, duration int) {
 	fmt.Printf("AudioSegmentGenerated\n")
 
-	name := "www/audio_audio0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
+	name := this.Dir + "audio_audio0_" + strconv.Itoa(int(timestamp)) + "_mp4.m4s"
 	this.Save(name, audioSegment)
 }
 

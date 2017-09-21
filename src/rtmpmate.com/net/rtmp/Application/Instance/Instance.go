@@ -7,6 +7,7 @@ import (
 	"rtmpmate.com/muxer/FLVMuxer"
 	"rtmpmate.com/muxer/FMP4Muxer"
 	"rtmpmate.com/muxer/HLSMuxer"
+	RTMP "rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/NetConnection"
 	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 type Instance struct {
 	Name string
+	dir  string
 
 	clients    map[string]*NetConnection.NetConnection
 	clientsMtx sync.RWMutex
@@ -69,13 +71,18 @@ type Instream struct {
 	DASHMuxer *DASHMuxer.DASHMuxer
 }
 
-func New(name string) (*Instance, error) {
+func New(app string, name string) (*Instance, error) {
+	if app == "" {
+		return nil, syscall.EINVAL
+	}
+
 	if name == "" {
 		name = "_definst_"
 	}
 
 	var inst Instance
 	inst.Name = name
+	inst.dir = RTMP.APPLICATIONS + app + "/" + name + "/"
 	inst.clients = make(map[string]*NetConnection.NetConnection)
 	inst.streams = make(map[string]*Instream)
 
@@ -94,11 +101,11 @@ func (this *Instance) GetStream(name string) (*Instream, error) {
 		var ins Instream
 		ins.Name = name
 		ins.Type = StreamTypes.IDLE
-		ins.Muxer, _ = muxer.New()
-		ins.FLVMuxer, _ = FLVMuxer.New()
-		ins.HLSMuxer, _ = HLSMuxer.New()
-		ins.FMP4Muxer, _ = FMP4Muxer.New()
-		ins.DASHMuxer, _ = DASHMuxer.New()
+		ins.Muxer, _ = muxer.New(this.dir, name)
+		ins.FLVMuxer, _ = FLVMuxer.New(this.dir, name)
+		ins.HLSMuxer, _ = HLSMuxer.New(this.dir, name)
+		ins.FMP4Muxer, _ = FMP4Muxer.New(this.dir, name)
+		ins.DASHMuxer, _ = DASHMuxer.New(this.dir, name)
 
 		s = &ins
 		this.streams[name] = s

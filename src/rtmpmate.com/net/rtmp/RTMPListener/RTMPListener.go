@@ -3,6 +3,8 @@ package RTMPListener
 import (
 	"fmt"
 	"net"
+	"os"
+	RTMP "rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Application"
 	"rtmpmate.com/net/rtmp/Handshaker"
 	"strconv"
@@ -21,6 +23,13 @@ func New() (*RTMPListener, error) {
 }
 
 func (this *RTMPListener) Listen(network string, port int) {
+	if _, err := os.Stat(RTMP.APPLICATIONS); os.IsNotExist(err) {
+		err = os.MkdirAll(RTMP.APPLICATIONS, os.ModeDir)
+		if err != nil {
+			return
+		}
+	}
+
 	if network == "" {
 		network = "tcp4"
 	}
@@ -28,7 +37,6 @@ func (this *RTMPListener) Listen(network string, port int) {
 	if port == 0 {
 		port = 1935
 	}
-
 	address := strconv.Itoa(port)
 
 	tcpaddr, err := net.ResolveTCPAddr(network, ":"+address)
@@ -42,7 +50,6 @@ func (this *RTMPListener) Listen(network string, port int) {
 		fmt.Printf("Failed to listen on port %d: %v.\n", port, err)
 		return
 	}
-
 	this.tcpln = tcpln
 
 	for this.exiting == false {

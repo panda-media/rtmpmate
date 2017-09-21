@@ -110,7 +110,7 @@ func (this *Application) GetInstance(name string) (*Instance.Instance, error) {
 
 	inst, ok := this.instances[name]
 	if ok == false {
-		inst, _ = Instance.New(name)
+		inst, _ = Instance.New(this.Name, name)
 		this.instances[name] = inst
 	}
 

@@ -9,10 +9,10 @@ type HLSMuxer struct {
 	FMP4Muxer.FMP4Muxer
 }
 
-func New() (*HLSMuxer, error) {
+func New(dir string, name string) (*HLSMuxer, error) {
 	var m HLSMuxer
 
-	err := m.Init("HLSMuxer")
+	err := m.Init(dir, name, "HLSMuxer")
 	if err != nil {
 		return nil, err
 	}
@@ -20,8 +20,8 @@ func New() (*HLSMuxer, error) {
 	return &m, nil
 }
 
-func (this *HLSMuxer) Init(t string) error {
-	err := this.FMP4Muxer.Init(t)
+func (this *HLSMuxer) Init(dir string, name string, t string) error {
+	err := this.FMP4Muxer.Init(dir, name, t)
 	if err != nil {
 		return err
 	}
