@@ -90,7 +90,7 @@ func New(app string, name string) (*Instance, error) {
 	return &inst, nil
 }
 
-func (this *Instance) GetStream(name string) (*Instream, error) {
+func (this *Instance) GetStream(name string, reset bool) (*Instream, error) {
 	if name == "" {
 		return nil, syscall.EINVAL
 	}
@@ -110,7 +110,7 @@ func (this *Instance) GetStream(name string) (*Instream, error) {
 
 		s = &ins
 		this.streams[name] = s
-	} else {
+	} else if reset {
 		s.Muxer.Init(this.dir, name, MuxerTypes.RTMP)
 		s.FLVMuxer.Init(this.dir, name, MuxerTypes.FLV)
 		s.HLSMuxer.Init(this.dir, name, MuxerTypes.HLS)

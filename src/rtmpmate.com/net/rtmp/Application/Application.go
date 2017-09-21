@@ -216,7 +216,7 @@ func (this *Application) onPublish(e *CommandEvent.CommandEvent) {
 
 	if nc := ns.Nc; nc.WriteAccess == "/" || nc.WriteAccess == "/"+nc.AppName {
 		inst, _ := this.GetInstance(nc.InstName)
-		stream, _ := inst.GetStream(ns.Stream.Name)
+		stream, _ := inst.GetStream(ns.Stream.Name, true)
 		if stream == nil {
 			info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_FAILED, "Internal error")
 			ns.SendStatus(e, info)
@@ -243,7 +243,7 @@ func (this *Application) onPlay(e *CommandEvent.CommandEvent) {
 
 	if nc := ns.Nc; nc.ReadAccess == "/" || nc.ReadAccess == "/"+nc.AppName {
 		inst, _ := this.GetInstance(nc.InstName)
-		stream, _ := inst.GetStream(ns.Stream.Name)
+		stream, _ := inst.GetStream(ns.Stream.Name, false)
 		if stream != nil {
 			if stream.Type == StreamTypes.PLAYING_VOD {
 				ns.Stream.Type = StreamTypes.PLAYING_VOD
@@ -274,7 +274,7 @@ func (this *Application) onUnpublish(e *CommandEvent.CommandEvent) {
 	fmt.Printf("Application.onUnpublish: stream=%s.\n", ns.Stream.Name)
 
 	inst, _ := this.GetInstance(ns.Nc.InstName)
-	stream, _ := inst.GetStream(ns.Stream.Name)
+	stream, _ := inst.GetStream(ns.Stream.Name, false)
 	if stream != nil {
 		stream.Muxer.EndOfStream("unpublish")
 	}

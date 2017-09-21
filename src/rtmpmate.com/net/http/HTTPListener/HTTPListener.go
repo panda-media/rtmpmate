@@ -99,7 +99,7 @@ func (this *HTTPListener) serveMPD(w http.ResponseWriter, r *http.Request,
 	}
 
 	inst, _ := app.GetInstance(instName)
-	stream, err := inst.GetStream(streamName)
+	stream, err := inst.GetStream(streamName, false)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -112,7 +112,7 @@ func (this *HTTPListener) serveMPD(w http.ResponseWriter, r *http.Request,
 	}
 
 	n, err := w.Write(mpd)
-	fmt.Printf("MPD: %d.\n", n)
+	fmt.Printf("MPD: size=%d.\n", n)
 }
 
 func (this *HTTPListener) appendHeadersForStream(w http.ResponseWriter) {
