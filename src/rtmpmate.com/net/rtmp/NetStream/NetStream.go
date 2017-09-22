@@ -6,10 +6,11 @@ import (
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/CommandEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/NetStatusEvent"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
+	"rtmpmate.com/events/UserControlEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Message"
@@ -33,6 +34,8 @@ func New(nc *NetConnection.NetConnection) (*NetStream, error) {
 	var ns NetStream
 	ns.Nc = nc
 
+	nc.AddEventListener(UserControlEvent.SET_BUFFER_LENGTH, ns.onSetBufferLength, 0)
+
 	nc.AddEventListener(CommandEvent.CLOSE, ns.onClose, 0)
 	nc.AddEventListener(CommandEvent.CREATE_STREAM, ns.onCreateStream, 0)
 	nc.AddEventListener(CommandEvent.PLAY, ns.onPlay, 0)
@@ -45,8 +48,8 @@ func New(nc *NetConnection.NetConnection) (*NetStream, error) {
 	nc.AddEventListener(CommandEvent.SEEK, ns.onSeek, 0)
 	nc.AddEventListener(CommandEvent.PAUSE, ns.onPause, 0)
 
-	nc.AddEventListener(DataFrameEvent.SET_DATA_FRAME, ns.onSetDataFrame, 0)
-	nc.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, ns.onClearDataFrame, 0)
+	nc.AddEventListener(DataEvent.SET_DATA_FRAME, ns.onSetDataFrame, 0)
+	nc.AddEventListener(DataEvent.CLEAR_DATA_FRAME, ns.onClearDataFrame, 0)
 	nc.AddEventListener(AudioEvent.DATA, ns.onAudio, 0)
 	nc.AddEventListener(VideoEvent.DATA, ns.onVideo, 0)
 
@@ -119,31 +122,33 @@ func (this *NetStream) Send(handler string, args ...*AMF.AMFValue) error {
 	return nil
 }
 
-func (this *NetStream) sendDataFrame(e *DataFrameEvent.DataFrameEvent) error {
+func (this *NetStream) sendDataFrame(e *DataEvent.DataEvent) error {
 	fmt.Printf("Sending %s...\n", e.Type)
 
 	return this.Send(e.Type, &AMF.AMFValue{
 		Type: AMFTypes.STRING,
-		Data: e.Key,
+		Data: e.Message.Key,
 	}, &AMF.AMFValue{
-		Type: AMFTypes.OBJECT,
-		Data: e.Data.Data,
+		Type: AMFTypes.ECMA_ARRAY,
+		Data: e.Message.Data.Data,
 	})
 }
 
-func (this *NetStream) clearDataFrame(e *DataFrameEvent.DataFrameEvent) error {
+func (this *NetStream) clearDataFrame(e *DataEvent.DataEvent) error {
 	return this.Send(e.Type, &AMF.AMFValue{
 		Type: AMFTypes.STRING,
-		Data: e.Key,
+		Data: e.Message.Key,
 	})
 }
 
 func (this *NetStream) sendAudio(e *AudioEvent.AudioEvent) error {
+	//fmt.Printf("audio: %v\n", e.Message.Header)
 	_, err := this.Nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
 	return err
 }
 
 func (this *NetStream) sendVideo(e *VideoEvent.VideoEvent) error {
+	//fmt.Printf("video: %v\n", e.Message.Header)
 	_, err := this.Nc.WriteByChunk(e.Message.Payload, &e.Message.Header)
 	return err
 }
@@ -175,6 +180,12 @@ func (this *NetStream) Dispose() error {
 	}
 
 	return nil
+}
+
+func (this *NetStream) onSetBufferLength(e *UserControlEvent.UserControlEvent) {
+	if this.Stream != nil {
+		this.Stream.BufferTime = float64(e.Message.Event.BufferLength)
+	}
 }
 
 func (this *NetStream) onCreateStream(e *CommandEvent.CommandEvent) {
@@ -217,13 +228,18 @@ func (this *NetStream) onCreateStream(e *CommandEvent.CommandEvent) {
 
 func (this *NetStream) onPlay(e *CommandEvent.CommandEvent) {
 	this.Stream.Name = e.Message.StreamName
+	this.Stream.AddEventListener(DataEvent.SET_DATA_FRAME, this.sendDataFrame, 0)
+	this.Stream.AddEventListener(DataEvent.CLEAR_DATA_FRAME, this.clearDataFrame, 0)
+	this.Stream.AddEventListener(AudioEvent.DATA, this.sendAudio, 0)
+	this.Stream.AddEventListener(VideoEvent.DATA, this.sendVideo, 0)
+
 	this.DispatchEvent(CommandEvent.New(CommandEvent.PLAY, this, e.Message))
 
-	if this.Stream.Type != StreamTypes.IDLE {
-		this.Stream.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame, 0)
-		this.Stream.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame, 0)
-		this.Stream.AddEventListener(AudioEvent.DATA, this.sendAudio, 0)
-		this.Stream.AddEventListener(VideoEvent.DATA, this.sendVideo, 0)
+	if this.Stream.Type == StreamTypes.IDLE {
+		this.Stream.RemoveEventListener(DataEvent.SET_DATA_FRAME, this.sendDataFrame)
+		this.Stream.RemoveEventListener(DataEvent.CLEAR_DATA_FRAME, this.clearDataFrame)
+		this.Stream.RemoveEventListener(AudioEvent.DATA, this.sendAudio)
+		this.Stream.RemoveEventListener(VideoEvent.DATA, this.sendVideo)
 	}
 }
 
@@ -260,14 +276,12 @@ func (this *NetStream) onReceiveAV(e *CommandEvent.CommandEvent) {
 
 func (this *NetStream) onPublish(e *CommandEvent.CommandEvent) {
 	this.Stream.Name = e.Message.PublishingName
-	this.DispatchEvent(CommandEvent.New(CommandEvent.PUBLISH, this, e.Message))
+	this.Stream.RemoveEventListener(DataEvent.SET_DATA_FRAME, this.sendDataFrame)
+	this.Stream.RemoveEventListener(DataEvent.CLEAR_DATA_FRAME, this.clearDataFrame)
+	this.Stream.RemoveEventListener(AudioEvent.DATA, this.sendAudio)
+	this.Stream.RemoveEventListener(VideoEvent.DATA, this.sendVideo)
 
-	if this.Stream.Type == StreamTypes.PUBLISHING {
-		this.Stream.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.sendDataFrame)
-		this.Stream.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.clearDataFrame)
-		this.Stream.RemoveEventListener(AudioEvent.DATA, this.sendAudio)
-		this.Stream.RemoveEventListener(VideoEvent.DATA, this.sendVideo)
-	}
+	this.DispatchEvent(CommandEvent.New(CommandEvent.PUBLISH, this, e.Message))
 }
 
 func (this *NetStream) onSeek(e *CommandEvent.CommandEvent) {
@@ -316,12 +330,12 @@ func (this *NetStream) onStatus(e *NetStatusEvent.NetStatusEvent) {
 
 }
 
-func (this *NetStream) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	this.Stream.DispatchEvent(DataFrameEvent.New(e.Type, this, e.Key, e.Data))
+func (this *NetStream) onSetDataFrame(e *DataEvent.DataEvent) {
+	this.Stream.DispatchEvent(DataEvent.New(e.Type, this, e.Message))
 }
 
-func (this *NetStream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	this.Stream.DispatchEvent(DataFrameEvent.New(e.Type, this, e.Key, e.Data))
+func (this *NetStream) onClearDataFrame(e *DataEvent.DataEvent) {
+	this.Stream.DispatchEvent(DataEvent.New(e.Type, this, e.Message))
 }
 
 func (this *NetStream) onAudio(e *AudioEvent.AudioEvent) {
@@ -332,7 +346,7 @@ func (this *NetStream) onVideo(e *VideoEvent.VideoEvent) {
 	this.Stream.DispatchEvent(VideoEvent.New(e.Type, this, e.Message))
 }
 
-func (this *NetStream) onMetaData(e *DataFrameEvent.DataFrameEvent) {
+func (this *NetStream) onMetaData(e *DataEvent.DataEvent) {
 	//fmt.Printf("%s: %s\n", e.Key, e.Data.ToString(0))
 }
 

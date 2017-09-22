@@ -104,7 +104,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 			Cost:    v.Cost,
 			Ended:   v.Ended,
 		}
-		if v.Type == AMFTypes.OBJECT {
+		if v.Type == AMFTypes.OBJECT || v.Type == AMFTypes.ECMA_ARRAY || v.Type == AMFTypes.STRICT_ARRAY {
 			this.CommandObject.Data = v.Data.(list.List)
 		}
 
@@ -122,7 +122,7 @@ func (this *CommandMessage) Parse(b []byte, offset int, size int) error {
 			Cost:    v.Cost,
 			Ended:   v.Ended,
 		}
-		if v.Type == AMFTypes.OBJECT {
+		if v.Type == AMFTypes.OBJECT || v.Type == AMFTypes.ECMA_ARRAY || v.Type == AMFTypes.STRICT_ARRAY {
 			this.CommandObject.Data = v.Data.(list.List)
 		}
 

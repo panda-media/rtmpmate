@@ -3,7 +3,7 @@ package FLVMuxer
 import (
 	"fmt"
 	"rtmpmate.com/events/AudioEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/format/FLV"
 	"rtmpmate.com/muxer"
@@ -39,26 +39,26 @@ func (this *FLVMuxer) Init(dir string, name string, t string) error {
 	return nil
 }
 
-func (this *FLVMuxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("FLVMuxer.%s: %s\n", e.Key, e.Data.ToString(0))
+func (this *FLVMuxer) onSetDataFrame(e *DataEvent.DataEvent) {
+	fmt.Printf("FLVMuxer.%s: %s\n", e.Message.Key, e.Message.Data.ToString(0))
 
 	if this.Record {
 		var encoder AMF.Encoder
-		encoder.EncodeString(e.Key)
-		encoder.EncodeECMAArray(e.Data)
+		encoder.EncodeString(e.Message.Key)
+		encoder.EncodeECMAArray(e.Message.Data)
 		data, _ := encoder.Encode()
 
 		b, _ := FLV.Format(0x12, encoder.Len(), 0, data)
 		this.Data.Write(b)
 	}
 
-	this.DataFrames[e.Key] = e.Data
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
+	this.DataFrames[e.Message.Key] = e.Message
+	this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, e.Message))
 }
 
-func (this *FLVMuxer) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	delete(this.DataFrames, e.Key)
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
+func (this *FLVMuxer) onClearDataFrame(e *DataEvent.DataEvent) {
+	delete(this.DataFrames, e.Message.Key)
+	this.DispatchEvent(DataEvent.New(DataEvent.CLEAR_DATA_FRAME, this, e.Message))
 }
 
 func (this *FLVMuxer) onAudio(e *AudioEvent.AudioEvent) {

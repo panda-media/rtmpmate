@@ -9,11 +9,12 @@ import (
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/CommandEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/Event"
+	"rtmpmate.com/events/UserControlEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/net/rtmp/Chunk"
-	//"rtmpmate.com/net/rtmp/Chunk/CSIDs"
+	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/AggregateMessage"
@@ -480,7 +481,7 @@ func (this *NetConnection) parseChunk(b []byte, size int) error {
 
 func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 	if c.MessageTypeID != 0x03 && c.MessageTypeID != 0x08 && c.MessageTypeID != 0x09 {
-		fmt.Printf("onMessage: 0x%02x.\n", c.MessageTypeID)
+		fmt.Printf("\nonMessage: 0x%02x.\n", c.MessageTypeID)
 	}
 
 	b := c.Data.Bytes()
@@ -489,11 +490,11 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 	switch c.MessageTypeID {
 	case Types.SET_CHUNK_SIZE:
 		this.farChunkSize = int(binary.BigEndian.Uint32(b) & 0x7FFFFFFF)
-		fmt.Printf("Set farChunkSize to %d.\n", this.farChunkSize)
+		fmt.Printf("Set farChunkSize: %d.\n", this.farChunkSize)
 
 	case Types.ABORT:
 		csid := binary.BigEndian.Uint32(b)
-		fmt.Printf("Abort chunk stream %d.\n", csid)
+		fmt.Printf("Abort chunk stream: %d.\n", csid)
 
 		element := this.chunks.Back()
 		if element != nil {
@@ -595,7 +596,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 			return err
 		}
 
-		this.DispatchEvent(DataFrameEvent.New(m.Handler, this, m.Key, m.Data))
+		this.DispatchEvent(DataEvent.New(m.Handler, this, m))
 
 	case Types.AMF3_SHARED_OBJECT:
 		fallthrough
@@ -658,33 +659,26 @@ func (this *NetConnection) onUserControl(m *UserControlMessage.UserControlMessag
 
 	switch m.Event.Type {
 	case EventTypes.STREAM_BEGIN:
-		streamID := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Stream Begin: id=%d.\n", streamID)
+		fmt.Printf("Stream Begin: id=%d.\n", m.Event.StreamID)
 
 	case EventTypes.STREAM_EOF:
-		streamID := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Stream EOF: id=%d.\n", streamID)
+		fmt.Printf("Stream EOF: id=%d.\n", m.Event.StreamID)
 
 	case EventTypes.STREAM_DRY:
-		streamID := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Stream Dry: id=%d.\n", streamID)
+		fmt.Printf("Stream Dry: id=%d.\n", m.Event.StreamID)
 
 	case EventTypes.SET_BUFFER_LENGTH:
-		streamID := binary.BigEndian.Uint32(m.Event.Data)
-		bufferLength := binary.BigEndian.Uint32(m.Event.Data[4:])
-		fmt.Printf("Set Buffer Length: id=%d, len=%dms.\n", streamID, bufferLength)
+		fmt.Printf("SetBufferLength: id=%d, len=%dms.\n", m.Event.StreamID, m.Event.BufferLength)
+		this.DispatchEvent(UserControlEvent.New(UserControlEvent.SET_BUFFER_LENGTH, this, m))
 
 	case EventTypes.STREAM_IS_RECORDED:
-		streamID := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Stream is Recorded: id=%d.\n", streamID)
+		fmt.Printf("Stream is Recorded: id=%d.\n", m.Event.StreamID)
 
 	case EventTypes.PING_REQUEST:
-		timestamp := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Ping Request: timestamp=%d.\n", timestamp)
+		fmt.Printf("Ping Request: timestamp=%d.\n", m.Event.Timestamp)
 
 	case EventTypes.PING_RESPONSE:
-		timestamp := binary.BigEndian.Uint32(m.Event.Data)
-		fmt.Printf("Ping Response: timestamp=%d.\n", timestamp)
+		fmt.Printf("Ping Response: timestamp=%d.\n", m.Event.Timestamp)
 
 	default:
 	}
@@ -708,7 +702,7 @@ func (this *NetConnection) onCommand(m *CommandMessage.CommandMessage) error {
 		this.DispatchEvent(CommandEvent.New(m.Name, this, m))
 	} else {
 		// Should not return error, this might be an user call
-		fmt.Printf("No handler found for event \"%s\".\n", m.Name)
+		fmt.Printf("No handler found for command \"%s\".\n", m.Name)
 	}
 
 	return nil
@@ -775,7 +769,7 @@ func (this *NetConnection) SendEncodedBuffer(encoder *AMF.Encoder, h Message.Hea
 	return nil
 }
 
-func (this *NetConnection) setChunkSize(size int) error {
+func (this *NetConnection) SetChunkSize(size int) error {
 	var encoder AMF.Encoder
 	encoder.AppendInt32(int32(size), false)
 
@@ -784,37 +778,38 @@ func (this *NetConnection) setChunkSize(size int) error {
 		return err
 	}
 
-	var h = Message.Header{
-		Type:      Types.SET_CHUNK_SIZE,
-		Length:    encoder.Len(),
-		Timestamp: 0,
-		StreamID:  0,
-	}
+	var h Message.Header
+	h.Fmt = 0
+	h.CSID = CSIDs.PROTOCOL_CONTROL
+	h.Type = Types.SET_CHUNK_SIZE
+	h.Length = encoder.Len()
+	h.Timestamp = 0
+	h.StreamID = 0
 
-	//h.CSID = CSIDs.PROTOCOL_CONTROL
 	_, err = this.WriteByChunk(b, &h)
 	if err != nil {
 		return err
 	}
 
 	this.nearChunkSize = size
+	fmt.Printf("Set nearChunkSize: %d.\n", this.nearChunkSize)
 
 	return nil
 }
 
-func (this *NetConnection) abort() error {
+func (this *NetConnection) Abort() error {
 	return nil
 }
 
-func (this *NetConnection) sendAckSequence(num int) error {
+func (this *NetConnection) SendAckSequence(num int) error {
 	return nil
 }
 
-func (this *NetConnection) sendUserControl(event uint16) error {
+func (this *NetConnection) SendUserControl(event uint16) error {
 	return nil
 }
 
-func (this *NetConnection) setAckWindowSize(size uint32) error {
+func (this *NetConnection) SetAckWindowSize(size uint32) error {
 	this.nearAckWindowSize = size
 	return nil
 }

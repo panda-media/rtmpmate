@@ -8,10 +8,11 @@ import (
 	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
+	"rtmpmate.com/net/rtmp/Message/DataMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage/FrameTypes"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
@@ -24,7 +25,7 @@ type Stream struct {
 	Name               string
 	Type               string
 	Chunks             list.List
-	DataFrames         map[string]*AMF.AMFObject
+	DataFrames         map[string]*DataMessage.DataMessage
 	InitAudio          *AudioMessage.AudioMessage
 	InitVideo          *VideoMessage.VideoMessage
 	Time               float64 // at when to init
@@ -50,7 +51,7 @@ func New(name string) (*Stream, error) {
 
 	var s Stream
 	s.Name = name
-	s.DataFrames = make(map[string]*AMF.AMFObject)
+	s.DataFrames = make(map[string]*DataMessage.DataMessage)
 
 	return &s, nil
 }
@@ -61,15 +62,15 @@ func (this *Stream) Source(src Interfaces.IMuxer) error {
 	}
 
 	this.src = src
-	this.src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
-	this.src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.src.AddEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.src.AddEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
 	this.src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
 	this.src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 
-	meta := this.src.GetDataFrame("onMetaData")
-	if meta != nil {
-		this.DataFrames["onMetaData"] = meta
-		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	m := this.src.GetDataFrame("onMetaData")
+	if m != nil {
+		this.DataFrames["onMetaData"] = m
+		this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, m))
 	}
 
 	return nil
@@ -106,7 +107,7 @@ func (this *Stream) Send(handler string, args ...*AMF.AMFValue) error {
 	return nil
 }
 
-func (this *Stream) GetDataFrame(name string) *AMF.AMFObject {
+func (this *Stream) GetDataFrame(name string) *DataMessage.DataMessage {
 	data, _ := this.DataFrames[name]
 	return data
 }
@@ -121,7 +122,7 @@ func (this *Stream) GetInitVideo() *VideoMessage.VideoMessage {
 
 func (this *Stream) Clear() error {
 	this.Chunks.Init()
-	this.DataFrames = make(map[string]*AMF.AMFObject)
+	this.DataFrames = make(map[string]*DataMessage.DataMessage)
 	this.InitAudio = nil
 	this.InitVideo = nil
 
@@ -140,8 +141,8 @@ func (this *Stream) Close() error {
 }
 
 func (this *Stream) Unlink(src Interfaces.IMuxer) error {
-	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
-	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
 	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
 	this.src = nil
@@ -149,14 +150,14 @@ func (this *Stream) Unlink(src Interfaces.IMuxer) error {
 	return nil
 }
 
-func (this *Stream) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	this.DataFrames[e.Key] = e.Data
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
+func (this *Stream) onSetDataFrame(e *DataEvent.DataEvent) {
+	this.DataFrames[e.Message.Key] = e.Message
+	this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, e.Message))
 }
 
-func (this *Stream) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	delete(this.DataFrames, e.Key)
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
+func (this *Stream) onClearDataFrame(e *DataEvent.DataEvent) {
+	delete(this.DataFrames, e.Message.Key)
+	this.DispatchEvent(DataEvent.New(DataEvent.CLEAR_DATA_FRAME, this, e.Message))
 }
 
 func (this *Stream) onAudio(e *AudioEvent.AudioEvent) {

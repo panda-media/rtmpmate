@@ -5,7 +5,7 @@ import (
 	"github.com/panda-media/muxer-fmp4/codec/H264"
 	"github.com/panda-media/muxer-fmp4/dashSlicer"
 	"rtmpmate.com/events/AudioEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/VideoEvent"
 	"rtmpmate.com/muxer"
 	MuxerTypes "rtmpmate.com/muxer/Types"
@@ -55,23 +55,23 @@ func (this *FMP4Muxer) Source(src Interfaces.IStream) error {
 	}
 
 	this.Src = src
-	this.Src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
-	this.Src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.Src.AddEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.Src.AddEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
 	this.Src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
 	this.Src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 
-	meta := this.Src.GetDataFrame("onMetaData")
-	if meta != nil {
-		this.DataFrames["onMetaData"] = meta
-		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	m := this.Src.GetDataFrame("onMetaData")
+	if m != nil {
+		this.DataFrames["onMetaData"] = m
+		this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, m))
 	}
 
 	return nil
 }
 
 func (this *FMP4Muxer) Unlink(src Interfaces.IStream) error {
-	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
-	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
 	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
 	this.Src = nil
@@ -95,16 +95,16 @@ func (this *FMP4Muxer) AudioSegmentGenerated(audioSegment []byte, timestamp int6
 	fmt.Printf("FMP4Muxer.AudioSegmentGenerated\n")
 }
 
-func (this *FMP4Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("FMP4Muxer.%s: %s\n", e.Key, e.Data.ToString(0))
+func (this *FMP4Muxer) onSetDataFrame(e *DataEvent.DataEvent) {
+	fmt.Printf("FMP4Muxer.%s: %s\n", e.Message.Key, e.Message.Data.ToString(0))
 
-	this.DataFrames[e.Key] = e.Data
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
+	this.DataFrames[e.Message.Key] = e.Message
+	this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, e.Message))
 }
 
-func (this *FMP4Muxer) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	delete(this.DataFrames, e.Key)
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
+func (this *FMP4Muxer) onClearDataFrame(e *DataEvent.DataEvent) {
+	delete(this.DataFrames, e.Message.Key)
+	this.DispatchEvent(DataEvent.New(DataEvent.CLEAR_DATA_FRAME, this, e.Message))
 }
 
 func (this *FMP4Muxer) onAudio(e *AudioEvent.AudioEvent) {

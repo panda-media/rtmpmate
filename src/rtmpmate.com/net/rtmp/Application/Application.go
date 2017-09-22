@@ -152,6 +152,7 @@ func HandshakeComplete(conn *net.TCPConn) {
 	nc.AddEventListener(CommandEvent.CONNECT, onConnect, 0)
 	nc.AddEventListener(CommandEvent.CREATE_STREAM, onCreateStream, 0)
 	nc.AddEventListener(CommandEvent.CLOSE, onDisconnect, 0)
+	nc.SetChunkSize(4096)
 	nc.Wait()
 }
 
@@ -226,7 +227,7 @@ func (this *Application) onPublish(e *CommandEvent.CommandEvent) {
 		} else {
 			ns.Stream.Type = StreamTypes.PUBLISHING
 			ns.Stream.Sink(stream.Muxer)
-			ns.Stream.Sink(stream.DASHMuxer)
+			//ns.Stream.Sink(stream.DASHMuxer)
 
 			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
 			ns.SendStatus(e, info)
@@ -245,13 +246,6 @@ func (this *Application) onPlay(e *CommandEvent.CommandEvent) {
 		inst, _ := this.GetInstance(nc.InstName)
 		stream, _ := inst.GetStream(ns.Stream.Name, false)
 		if stream != nil {
-			if stream.Type == StreamTypes.PLAYING_VOD {
-				ns.Stream.Type = StreamTypes.PLAYING_VOD
-			} else {
-				ns.Stream.Type = StreamTypes.PLAYING_LIVE
-			}
-			ns.Stream.Source(stream.Muxer)
-
 			if e.Message.Reset {
 				info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
 				ns.SendStatus(e, info)
@@ -259,6 +253,13 @@ func (this *Application) onPlay(e *CommandEvent.CommandEvent) {
 
 			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_START, "Play start")
 			ns.SendStatus(e, info)
+
+			if stream.Type == StreamTypes.PLAYING_VOD {
+				ns.Stream.Type = StreamTypes.PLAYING_VOD
+			} else {
+				ns.Stream.Type = StreamTypes.PLAYING_LIVE
+			}
+			ns.Stream.Source(stream.Muxer)
 		} else {
 			info, _ := nc.GetInfoObject(Level.ERROR, Code.NETSTREAM_PLAY_STREAMNOTFOUND, "Stream not found")
 			ns.SendStatus(e, info)

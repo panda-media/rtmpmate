@@ -11,7 +11,7 @@ import (
 	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
-	"rtmpmate.com/events/DataFrameEvent"
+	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/NetStatusEvent"
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
@@ -19,8 +19,8 @@ import (
 	MuxerTypes "rtmpmate.com/muxer/Types"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
+	"rtmpmate.com/net/rtmp/Message/DataMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
-	"rtmpmate.com/util/AMF"
 	"syscall"
 )
 
@@ -28,7 +28,7 @@ type Muxer struct {
 	Dir                string
 	Name               string
 	Type               string
-	DataFrames         map[string]*AMF.AMFObject
+	DataFrames         map[string]*DataMessage.DataMessage
 	InitAudio          *AudioMessage.AudioMessage
 	InitVideo          *VideoMessage.VideoMessage
 	Data               bytes.Buffer
@@ -55,7 +55,7 @@ func (this *Muxer) Init(dir string, name string, t string) error {
 	this.Dir = dir + name + "/"
 	this.Name = name
 	this.Type = t
-	this.DataFrames = make(map[string]*AMF.AMFObject)
+	this.DataFrames = make(map[string]*DataMessage.DataMessage)
 
 	if _, err := os.Stat(this.Dir); os.IsNotExist(err) {
 		err = os.MkdirAll(this.Dir, os.ModeDir)
@@ -73,23 +73,23 @@ func (this *Muxer) Source(src Interfaces.IStream) error {
 	}
 
 	this.Src = src
-	this.Src.AddEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
-	this.Src.AddEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
+	this.Src.AddEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame, 0)
+	this.Src.AddEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame, 0)
 	this.Src.AddEventListener(AudioEvent.DATA, this.onAudio, 0)
 	this.Src.AddEventListener(VideoEvent.DATA, this.onVideo, 0)
 
-	meta := this.Src.GetDataFrame("onMetaData")
-	if meta != nil {
-		this.DataFrames["onMetaData"] = meta
-		this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, "onMetaData", meta))
+	m := this.Src.GetDataFrame("onMetaData")
+	if m != nil {
+		this.DataFrames["onMetaData"] = m
+		this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, m))
 	}
 
 	return nil
 }
 
 func (this *Muxer) Unlink(src Interfaces.IStream) error {
-	src.RemoveEventListener(DataFrameEvent.SET_DATA_FRAME, this.onSetDataFrame)
-	src.RemoveEventListener(DataFrameEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
+	src.RemoveEventListener(DataEvent.SET_DATA_FRAME, this.onSetDataFrame)
+	src.RemoveEventListener(DataEvent.CLEAR_DATA_FRAME, this.onClearDataFrame)
 	src.RemoveEventListener(AudioEvent.DATA, this.onAudio)
 	src.RemoveEventListener(VideoEvent.DATA, this.onVideo)
 	this.Src = nil
@@ -101,7 +101,7 @@ func (this *Muxer) IsTypeSupported(mime string) bool {
 	return true
 }
 
-func (this *Muxer) GetDataFrame(name string) *AMF.AMFObject {
+func (this *Muxer) GetDataFrame(name string) *DataMessage.DataMessage {
 	data, _ := this.DataFrames[name]
 	return data
 }
@@ -114,16 +114,16 @@ func (this *Muxer) GetInitVideo() *VideoMessage.VideoMessage {
 	return this.InitVideo
 }
 
-func (this *Muxer) onSetDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	fmt.Printf("Muxer.%s: %s\n", e.Key, e.Data.ToString(0))
+func (this *Muxer) onSetDataFrame(e *DataEvent.DataEvent) {
+	fmt.Printf("Muxer.%s: %s\n", e.Message.Key, e.Message.Data.ToString(0))
 
-	this.DataFrames[e.Key] = e.Data
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.SET_DATA_FRAME, this, e.Key, e.Data))
+	this.DataFrames[e.Message.Key] = e.Message
+	this.DispatchEvent(DataEvent.New(DataEvent.SET_DATA_FRAME, this, e.Message))
 }
 
-func (this *Muxer) onClearDataFrame(e *DataFrameEvent.DataFrameEvent) {
-	delete(this.DataFrames, e.Key)
-	this.DispatchEvent(DataFrameEvent.New(DataFrameEvent.CLEAR_DATA_FRAME, this, e.Key, e.Data))
+func (this *Muxer) onClearDataFrame(e *DataEvent.DataEvent) {
+	delete(this.DataFrames, e.Message.Key)
+	this.DispatchEvent(DataEvent.New(DataEvent.CLEAR_DATA_FRAME, this, e.Message))
 }
 
 func (this *Muxer) onAudio(e *AudioEvent.AudioEvent) {

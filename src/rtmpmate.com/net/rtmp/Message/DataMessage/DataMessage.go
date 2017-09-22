@@ -13,6 +13,7 @@ type DataMessage struct {
 	Handler string
 	Key     string
 	Data    *AMF.AMFObject
+	Payload []byte
 }
 
 func New(encoding byte) (*DataMessage, error) {
@@ -59,6 +60,8 @@ func (this *DataMessage) Parse(b []byte, offset int, size int) error {
 			this.Data.Data = v.Data.(list.List)
 		}
 	}
+
+	this.Payload = b
 
 	return nil
 }
