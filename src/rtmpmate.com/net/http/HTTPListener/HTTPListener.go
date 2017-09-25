@@ -44,13 +44,18 @@ func (this *HTTPListener) Listen(network string, port int) {
 	}
 	address := strconv.Itoa(port)
 
-	http.HandleFunc("/", this.connHandler)
+	http.HandleFunc("/", this.handler)
 	http.ListenAndServe(":"+address, nil)
 
 	fmt.Printf("%v exiting...\n", this)
 }
 
-func (this *HTTPListener) connHandler(w http.ResponseWriter, r *http.Request) {
+func (this *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	arr := urlRe.FindStringSubmatch(r.URL.Path)
 	if arr != nil {
 		appName := arr[1]

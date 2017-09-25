@@ -125,10 +125,7 @@ func (this *NetStream) Send(handler string, args ...*AMF.AMFValue) error {
 func (this *NetStream) sendDataFrame(e *DataEvent.DataEvent) error {
 	fmt.Printf("Sending %s...\n", e.Type)
 
-	return this.Send(e.Type, &AMF.AMFValue{
-		Type: AMFTypes.STRING,
-		Data: e.Message.Key,
-	}, &AMF.AMFValue{
+	return this.Send(e.Message.Key, &AMF.AMFValue{
 		Type: AMFTypes.ECMA_ARRAY,
 		Data: e.Message.Data.Data,
 	})
@@ -160,6 +157,7 @@ func (this *NetStream) SendStatus(e *CommandEvent.CommandEvent, info *AMF.AMFObj
 	encoder.EncodeNull()
 	encoder.EncodeObject(info)
 
+	e.Message.CSID = CSIDs.COMMAND_2
 	this.Nc.SendEncodedBuffer(&encoder, e.Message.Header)
 }
 

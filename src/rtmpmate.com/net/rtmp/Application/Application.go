@@ -166,10 +166,10 @@ func onConnect(e *CommandEvent.CommandEvent) {
 	if nc.ReadAccess == "/" || nc.ReadAccess == "/"+nc.AppName {
 		Accept(nc)
 
-		nc.SetChunkSize(4096)
 		nc.SetAckWindowSize(2500000)
 		nc.SetPeerBandwidth(2500000, LimitTypes.DYNAMIC)
 		nc.SendUserControl(EventTypes.STREAM_BEGIN, 0, 0, 0)
+		nc.SetChunkSize(4096)
 
 		encoder.EncodeString(Commands.RESULT)
 		info, _ = nc.GetInfoObject(Level.STATUS, Code.NETCONNECTION_CONNECT_SUCCESS, "connect success")
