@@ -779,12 +779,9 @@ func (this *NetConnection) SetChunkSize(size int) error {
 	}
 
 	var h Message.Header
-	h.Fmt = 0
 	h.CSID = CSIDs.PROTOCOL_CONTROL
 	h.Type = Types.SET_CHUNK_SIZE
 	h.Length = encoder.Len()
-	h.Timestamp = 0
-	h.StreamID = 0
 
 	_, err = this.WriteByChunk(b, &h)
 	if err != nil {
@@ -802,15 +799,101 @@ func (this *NetConnection) Abort() error {
 }
 
 func (this *NetConnection) SendAckSequence(num int) error {
+	var encoder AMF.Encoder
+	encoder.AppendInt32(int32(this.bytesIn), false)
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	var h Message.Header
+	h.CSID = CSIDs.PROTOCOL_CONTROL
+	h.Type = Types.ACK
+	h.Length = encoder.Len()
+
+	_, err = this.WriteByChunk(b, &h)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (this *NetConnection) SendUserControl(event uint16) error {
+func (this *NetConnection) SendUserControl(event uint16, streamID int, bufferLength int, timestamp int) error {
+	var encoder AMF.Encoder
+	encoder.AppendInt16(int16(event), false)
+	if event <= EventTypes.STREAM_IS_RECORDED {
+		encoder.AppendInt32(int32(streamID), false)
+	}
+	if event == EventTypes.SET_BUFFER_LENGTH {
+		encoder.AppendInt32(int32(bufferLength), false)
+	}
+	if event == EventTypes.PING_REQUEST || event == EventTypes.PING_RESPONSE {
+		encoder.AppendInt32(int32(timestamp), false)
+	}
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	m, _ := UserControlMessage.New()
+	m.CSID = CSIDs.PROTOCOL_CONTROL
+	m.Length = encoder.Len()
+
+	_, err = this.WriteByChunk(b, &m.Header)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (this *NetConnection) SetAckWindowSize(size uint32) error {
-	this.nearAckWindowSize = size
+func (this *NetConnection) SetAckWindowSize(size int) error {
+	var encoder AMF.Encoder
+	encoder.AppendInt32(int32(size), false)
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	var h Message.Header
+	h.CSID = CSIDs.PROTOCOL_CONTROL
+	h.Type = Types.ACK_WINDOW_SIZE
+	h.Length = encoder.Len()
+
+	_, err = this.WriteByChunk(b, &h)
+	if err != nil {
+		return err
+	}
+
+	this.nearAckWindowSize = uint32(size)
+	fmt.Printf("Set nearAckWindowSize: %d.\n", this.nearAckWindowSize)
+
+	return nil
+}
+
+func (this *NetConnection) SetPeerBandwidth(size int, limitType byte) error {
+	var encoder AMF.Encoder
+	encoder.AppendInt32(int32(size), false)
+	encoder.AppendInt8(int8(limitType))
+
+	b, err := encoder.Encode()
+	if err != nil {
+		return err
+	}
+
+	m, _ := BandwidthMessage.New()
+	m.CSID = CSIDs.PROTOCOL_CONTROL
+	m.Length = encoder.Len()
+
+	_, err = this.WriteByChunk(b, &m.Header)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

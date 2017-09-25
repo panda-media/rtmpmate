@@ -9,7 +9,9 @@ import (
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/net/rtmp"
 	"rtmpmate.com/net/rtmp/Application/Instance"
+	"rtmpmate.com/net/rtmp/Message/BandwidthMessage/LimitTypes"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
+	EventTypes "rtmpmate.com/net/rtmp/Message/UserControlMessage/Event/Types"
 	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/NetStream"
 	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
@@ -152,7 +154,6 @@ func HandshakeComplete(conn *net.TCPConn) {
 	nc.AddEventListener(CommandEvent.CONNECT, onConnect, 0)
 	nc.AddEventListener(CommandEvent.CREATE_STREAM, onCreateStream, 0)
 	nc.AddEventListener(CommandEvent.CLOSE, onDisconnect, 0)
-	nc.SetChunkSize(4096)
 	nc.Wait()
 }
 
@@ -164,6 +165,11 @@ func onConnect(e *CommandEvent.CommandEvent) {
 	var info *AMF.AMFObject
 	if nc.ReadAccess == "/" || nc.ReadAccess == "/"+nc.AppName {
 		Accept(nc)
+
+		nc.SetChunkSize(4096)
+		nc.SetAckWindowSize(2500000)
+		nc.SetPeerBandwidth(2500000, LimitTypes.DYNAMIC)
+		nc.SendUserControl(EventTypes.STREAM_BEGIN, 0, 0, 0)
 
 		encoder.EncodeString(Commands.RESULT)
 		info, _ = nc.GetInfoObject(Level.STATUS, Code.NETCONNECTION_CONNECT_SUCCESS, "connect success")
@@ -246,6 +252,8 @@ func (this *Application) onPlay(e *CommandEvent.CommandEvent) {
 		inst, _ := this.GetInstance(nc.InstName)
 		stream, _ := inst.GetStream(ns.Stream.Name, false)
 		if stream != nil {
+			nc.SendUserControl(EventTypes.STREAM_BEGIN, ns.Stream.ID, 0, 0)
+
 			if e.Message.Reset {
 				info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PLAY_RESET, "Play reset")
 				ns.SendStatus(e, info)
