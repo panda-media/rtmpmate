@@ -3,12 +3,7 @@ package muxer
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
-	AACTypes "rtmpmate.com/codec/AAC/Types"
-	"rtmpmate.com/codec/AudioFormats"
-	H264Types "rtmpmate.com/codec/H264/Types"
-	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataEvent"
@@ -17,6 +12,10 @@ import (
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/events/VideoEvent"
 	MuxerTypes "rtmpmate.com/muxer/Types"
+	AACTypes "rtmpmate.com/muxer/codec/AAC/Types"
+	"rtmpmate.com/muxer/codec/AudioFormats"
+	H264Types "rtmpmate.com/muxer/codec/H264/Types"
+	"rtmpmate.com/muxer/codec/VideoCodecs"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/DataMessage"
@@ -163,14 +162,17 @@ func (this *Muxer) Save(name string, data []byte) error {
 		err error
 	)
 
-	if _, err = os.Stat(name); os.IsNotExist(err) {
+	if _, err = os.Stat(name); os.IsExist(err) {
+		f, err = os.Open(name)
+	} else {
 		f, err = os.Create(name)
-		if err != nil {
-			return err
-		}
 	}
 
-	_, err = io.WriteString(f, string(data))
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(data)
 
 	return err
 }

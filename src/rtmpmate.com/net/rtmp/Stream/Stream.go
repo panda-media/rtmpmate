@@ -2,21 +2,21 @@ package Stream
 
 import (
 	"container/list"
-	AACTypes "rtmpmate.com/codec/AAC/Types"
-	"rtmpmate.com/codec/AudioFormats"
-	H264Types "rtmpmate.com/codec/H264/Types"
-	"rtmpmate.com/codec/VideoCodecs"
 	"rtmpmate.com/events"
 	"rtmpmate.com/events/AudioEvent"
 	"rtmpmate.com/events/DataEvent"
 	"rtmpmate.com/events/VideoEvent"
+	AACTypes "rtmpmate.com/muxer/codec/AAC/Types"
+	"rtmpmate.com/muxer/codec/AudioFormats"
+	H264Types "rtmpmate.com/muxer/codec/H264/Types"
+	"rtmpmate.com/muxer/codec/VideoCodecs"
+	"rtmpmate.com/net/rtmp/AMF"
 	"rtmpmate.com/net/rtmp/Interfaces"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/DataMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage/FrameTypes"
 	"rtmpmate.com/net/rtmp/Stream/RecordModes"
-	"rtmpmate.com/util/AMF"
 	"syscall"
 )
 

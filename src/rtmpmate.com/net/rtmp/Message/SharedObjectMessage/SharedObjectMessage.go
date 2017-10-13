@@ -2,9 +2,10 @@ package SharedObjectMessage
 
 import (
 	"container/list"
+	"rtmpmate.com/net/rtmp/AMF"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/Types"
-	"rtmpmate.com/util/AMF"
+	"rtmpmate.com/net/rtmp/ObjectEncoding"
 )
 
 // Not sure about this.
@@ -19,7 +20,7 @@ type SharedObjectMessage struct {
 func New(encoding byte) (*SharedObjectMessage, error) {
 	var m SharedObjectMessage
 
-	if encoding == AMF.AMF0 {
+	if encoding == ObjectEncoding.AMF0 {
 		m.Type = Types.DATA
 	} else {
 		m.Type = Types.AMF3_DATA

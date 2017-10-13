@@ -12,15 +12,16 @@ import (
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/events/UserControlEvent"
 	"rtmpmate.com/events/VideoEvent"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
 	"rtmpmate.com/net/rtmp/NetConnection"
+	"rtmpmate.com/net/rtmp/ObjectEncoding"
 	"rtmpmate.com/net/rtmp/Stream"
 	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
 )
 
 type NetStream struct {
@@ -103,7 +104,7 @@ func (this *NetStream) Send(handler string, args ...*AMF.AMFValue) error {
 	}
 
 	var h Message.Header
-	if this.Nc.ObjectEncoding == AMF.AMF0 {
+	if this.Nc.ObjectEncoding == ObjectEncoding.AMF0 {
 		h.Type = Types.DATA
 	} else {
 		h.Type = Types.AMF3_DATA

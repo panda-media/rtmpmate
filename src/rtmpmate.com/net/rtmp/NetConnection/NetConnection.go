@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"encoding/binary"
 	"fmt"
+	"github.com/gorilla/websocket"
 	"net"
 	"regexp"
 	"rtmpmate.com/events"
@@ -13,6 +14,8 @@ import (
 	"rtmpmate.com/events/Event"
 	"rtmpmate.com/events/UserControlEvent"
 	"rtmpmate.com/events/VideoEvent"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 	"rtmpmate.com/net/rtmp/Chunk"
 	"rtmpmate.com/net/rtmp/Chunk/CSIDs"
 	"rtmpmate.com/net/rtmp/Chunk/States"
@@ -26,9 +29,8 @@ import (
 	"rtmpmate.com/net/rtmp/Message/UserControlMessage"
 	EventTypes "rtmpmate.com/net/rtmp/Message/UserControlMessage/Event/Types"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
+	"rtmpmate.com/net/rtmp/ObjectEncoding"
 	"rtmpmate.com/net/rtmp/Responder"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
 	"strconv"
 	"syscall"
 )
@@ -40,12 +42,14 @@ var (
 
 type NetConnection struct {
 	bwLimitType       byte
-	conn              *net.TCPConn
+	conn              net.Conn
+	wsConn            *websocket.Conn
 	chunks            list.List
 	farAckWindowSize  uint32
 	farChunkSize      int
 	nearAckWindowSize uint32
 	nearChunkSize     int
+	transactionID     int
 	responders        map[int]*Responder.Responder
 
 	Agent             string
@@ -107,7 +111,7 @@ type statsToAdmin struct {
 	msgDropped int
 }
 
-func New(conn *net.TCPConn) (*NetConnection, error) {
+func New(conn net.Conn) (*NetConnection, error) {
 	if conn == nil {
 		return nil, syscall.EINVAL
 	}
@@ -118,11 +122,12 @@ func New(conn *net.TCPConn) (*NetConnection, error) {
 	nc.conn = conn
 	nc.farChunkSize = 128
 	nc.nearChunkSize = 128
+	nc.transactionID = 0
 	nc.responders = make(map[int]*Responder.Responder)
 
 	nc.FarID = strconv.Itoa(farID)
 	nc.InstName = "_definst_"
-	nc.ObjectEncoding = AMF.AMF0
+	nc.ObjectEncoding = ObjectEncoding.AMF0
 	nc.ReadAccess = "/"
 	nc.WriteAccess = "/"
 	nc.AudioSampleAccess = "/"
@@ -143,7 +148,20 @@ func (this *NetConnection) Read(b []byte) (int, error) {
 }
 
 func (this *NetConnection) Write(b []byte) (int, error) {
-	return this.conn.Write(b)
+	switch this.Protocol {
+	case "rtmp":
+		return this.conn.Write(b)
+
+	case "ws":
+		err := this.wsConn.WriteMessage(websocket.BinaryMessage, b)
+		if err != nil {
+			return 0, err
+		}
+
+		return len(b), nil
+	}
+
+	return 0, fmt.Errorf("Unknown protocol: \"%s\".\n", this.Protocol)
 }
 
 func (this *NetConnection) WriteByChunk(b []byte, h *Message.Header) (int, error) {
@@ -222,11 +240,11 @@ func (this *NetConnection) WriteByChunk(b []byte, h *Message.Header) (int, error
 		} else if i == h.Length {
 			cs := c.Data.Bytes()
 			_, err = this.Write(cs)
-
-			this.bytesOut += uint32(c.Data.Len())
 			if err != nil {
 				return i, err
 			}
+
+			this.bytesOut += uint32(c.Data.Len())
 
 			/*size := len(cs)
 			for x := 0; x < size; x += 16 {
@@ -262,6 +280,43 @@ func (this *NetConnection) Wait() error {
 		err = this.parseChunk(b[:n], n)
 		if err != nil {
 			return err
+		}
+	}
+}
+
+func (this *NetConnection) WaitWebsocket(conn *websocket.Conn) error {
+	this.wsConn = conn
+
+	for {
+		messageType, b, err := this.wsConn.ReadMessage()
+		if err != nil {
+			return err
+		}
+
+		n := len(b)
+		this.bytesIn += uint32(n)
+
+		switch messageType {
+		case websocket.TextMessage:
+			this.wsConn.WriteMessage(websocket.TextMessage, []byte("Not Acceptable"))
+
+		case websocket.BinaryMessage:
+			err = this.parseChunk(b, n)
+			if err != nil {
+				return err
+			}
+
+		case websocket.CloseMessage:
+			this.Close()
+
+		case websocket.PingMessage:
+			// TODO:
+
+		case websocket.PongMessage:
+			// TODO:
+
+		default:
+			this.Close()
 		}
 	}
 }
@@ -621,7 +676,7 @@ func (this *NetConnection) parseMessage(c *Chunk.Chunk) error {
 		if m.CommandObject != nil {
 			encoding, _ := m.CommandObject.Get("objectEncoding")
 			if encoding != nil && encoding.Data.(float64) != 0 {
-				this.ObjectEncoding = AMF.AMF3
+				this.ObjectEncoding = ObjectEncoding.AMF3
 				m.Type = Types.AMF3_COMMAND
 			}
 		}
@@ -798,7 +853,7 @@ func (this *NetConnection) Abort() error {
 	return nil
 }
 
-func (this *NetConnection) SendAckSequence(num int) error {
+func (this *NetConnection) SendAckSequence() error {
 	var encoder AMF.Encoder
 	encoder.AppendInt32(int32(this.bytesIn), false)
 
@@ -905,11 +960,16 @@ func (this *NetConnection) CreateStream() error {
 	return nil
 }
 
-func (this *NetConnection) Call(method string, res *Responder.Responder, args ...*AMF.AMFValue) error {
-	var encoder AMF.Encoder
-	encoder.EncodeString(method)
-	encoder.EncodeNumber(float64(res.ID))
+func (this *NetConnection) Call(command string, responder *Responder.Responder, args ...*AMF.AMFValue) error {
+	transactionID := 0
+	if responder != nil {
+		this.transactionID++
+		transactionID = this.transactionID
+	}
 
+	var encoder AMF.Encoder
+	encoder.EncodeString(command)
+	encoder.EncodeNumber(float64(transactionID))
 	for _, v := range args {
 		encoder.EncodeValue(v)
 	}
@@ -919,16 +979,31 @@ func (this *NetConnection) Call(method string, res *Responder.Responder, args ..
 		return err
 	}
 
-	this.Write(b)
+	var h Message.Header
+	h.CSID = CSIDs.COMMAND
+	h.Type = Types.COMMAND
+	h.Length = encoder.Len()
+
+	_, err = this.WriteByChunk(b, &h)
+	if err != nil {
+		return err
+	}
+
+	if responder != nil {
+		this.responders[transactionID] = responder
+	}
 
 	return nil
 }
 
 func (this *NetConnection) Close() error {
-	this.Connected = false
 	err := this.conn.Close()
 
-	this.DispatchEvent(CommandEvent.New(CommandEvent.CLOSE, this, nil))
+	if this.Connected {
+		this.DispatchEvent(CommandEvent.New(CommandEvent.CLOSE, this, nil))
+	}
+
+	this.Connected = false
 
 	return err
 }

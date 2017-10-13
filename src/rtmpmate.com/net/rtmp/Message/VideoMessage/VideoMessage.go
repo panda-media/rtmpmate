@@ -21,16 +21,16 @@ func New() (*VideoMessage, error) {
 }
 
 func (this *VideoMessage) Parse(b []byte, offset int, size int) error {
+	cost := 0
+
 	this.Length = size
 
-	pos := 0
-	tmp := b[offset+pos]
+	tmp := b[offset+cost]
 	this.FrameType = (tmp >> 4) & 0x0F
 	this.Codec = tmp & 0x0F
+	cost++
 
-	pos++
-	this.DataType = b[offset+pos]
-
+	this.DataType = b[offset+cost]
 	this.Payload = b[offset : offset+size]
 
 	return nil

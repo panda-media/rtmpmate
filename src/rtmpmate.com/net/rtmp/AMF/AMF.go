@@ -6,13 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"rtmpmate.com/util/AMF/Types"
+	"rtmpmate.com/net/rtmp/AMF/Types"
 	"syscall"
-)
-
-const (
-	AMF0 byte = 0
-	AMF3 byte = 3
 )
 
 type AMFHash struct {
@@ -82,12 +77,13 @@ func (this *AMFHash) ToString(depth int) string {
 
 type AMFValue struct {
 	AMFHash
-	Type   byte
-	Key    string
-	Data   interface{}
-	Offset int16
-	Cost   int
-	Ended  bool
+	Type       byte
+	Key        string
+	Data       interface{}
+	Timtstamp  float64
+	Timeoffset uint16
+	Cost       int
+	Ended      bool
 }
 
 type AMFObject struct {
@@ -108,13 +104,14 @@ type AMFLongString struct {
 }
 
 type AMFDate struct {
-	Data   float64
-	Offset int16
-	Cost   int
+	Data       float64
+	Timtstamp  float64
+	Timeoffset uint16
+	Cost       int
 }
 
 func Decode(data []byte, offset int, size int) (*AMFValue, error) {
-	key, err := DecodeString(data, offset, size)
+	key, err := DecodeValue(data, offset, size)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +124,7 @@ func Decode(data []byte, offset int, size int) (*AMFValue, error) {
 	var v AMFValue
 	v.Init()
 	v.Type = val.Type
-	v.Key = key.Data
+	v.Key = key.Data.(string)
 	v.Data = val.Data
 	v.Cost = key.Cost + val.Cost
 
@@ -143,7 +140,6 @@ func DecodeString(data []byte, offset int, size int) (*AMFString, error) {
 
 	var pos = 0
 	var length = binary.BigEndian.Uint16(data[offset+pos : offset+pos+2])
-
 	pos += 2
 
 	if length > 0 {
@@ -165,9 +161,7 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 	v.Init()
 
 	var pos = 0
-	var ended = false
-
-	for ended == false && pos < size {
+	for v.Ended == false && pos < size {
 		key, err := DecodeString(data, offset+pos, size-pos)
 		if err != nil {
 			return nil, err
@@ -181,22 +175,20 @@ func DecodeObject(data []byte, offset int, size int) (*AMFObject, error) {
 		}
 
 		pos += val.Cost
-		ended = val.Ended
+		v.Ended = val.Ended
 
 		val.Key = key.Data
 		v.Data.PushBack(val)
-
 		v.Hash[val.Key] = val
 	}
 
 	v.Cost = pos
-	v.Ended = ended
 
 	return &v, nil
 }
 
 func DecodeECMAArray(data []byte, offset int, size int) (*AMFObject, error) {
-	if size < 3 {
+	if size < 4 {
 		return nil, fmt.Errorf("Data not enough while decoding AMF ECMA array")
 	}
 
@@ -204,8 +196,6 @@ func DecodeECMAArray(data []byte, offset int, size int) (*AMFObject, error) {
 	v.Init()
 
 	var pos = 0
-	var ended = false
-
 	var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
 	pos += 4
 
@@ -223,25 +213,22 @@ func DecodeECMAArray(data []byte, offset int, size int) (*AMFObject, error) {
 		}
 
 		pos += val.Cost
+		if i == length-1 {
+			v.Ended = true
+		}
 
 		val.Key = key.Data
-		v.Hash[val.Key] = val
-
 		v.Data.PushBack(val)
-
-		if i == length-1 {
-			ended = true
-		}
+		v.Hash[val.Key] = val
 	}
 
 	v.Cost = pos
-	v.Ended = ended
 
 	return &v, nil
 }
 
 func DecodeStrictArray(data []byte, offset int, size int) (*AMFObject, error) {
-	if size < 1 {
+	if size < 4 {
 		return nil, fmt.Errorf("Data not enough while decoding AMF ECMA array")
 	}
 
@@ -249,8 +236,6 @@ func DecodeStrictArray(data []byte, offset int, size int) (*AMFObject, error) {
 	v.Init()
 
 	var pos = 0
-	var ended = false
-
 	var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
 	pos += 4
 
@@ -261,16 +246,14 @@ func DecodeStrictArray(data []byte, offset int, size int) (*AMFObject, error) {
 		}
 
 		pos += val.Cost
+		if i == length-1 {
+			v.Ended = true
+		}
 
 		v.Data.PushBack(val)
-
-		if i == length-1 {
-			ended = true
-		}
 	}
 
 	v.Cost = pos
-	v.Ended = ended
 
 	return &v, nil
 }
@@ -284,13 +267,11 @@ func DecodeDate(data []byte, offset int, size int) (*AMFDate, error) {
 
 	var pos = 0
 	var bits = binary.BigEndian.Uint64(data[offset+pos : offset+pos+8])
-	v.Data = math.Float64frombits(bits)
-
+	v.Timtstamp = math.Float64frombits(bits)
 	pos += 8
 
-	var timeoffset = binary.BigEndian.Uint16(data[offset+pos : offset+pos+2])
-	v.Data += float64(timeoffset) * 60 * 1000
-
+	v.Timeoffset = binary.BigEndian.Uint16(data[offset+pos : offset+pos+2])
+	v.Data = v.Timtstamp + float64(v.Timeoffset)*60*1000
 	pos += 2
 
 	v.Cost = pos
@@ -307,7 +288,6 @@ func DecodeLongString(data []byte, offset int, size int) (*AMFLongString, error)
 
 	var pos = 0
 	var length = binary.BigEndian.Uint32(data[offset+pos : offset+pos+4])
-
 	pos += 4
 
 	if length > 0 {
@@ -325,17 +305,14 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 		return nil, fmt.Errorf("Data not enough while decoding AMF value")
 	}
 
-	var pos = 0
-	var valueType = uint8(data[offset+pos : offset+pos+1][0])
-
-	pos += 1
-
 	var v AMFValue
 	v.Init()
 
-	var ended = false
+	var pos = 0
+	v.Type = data[offset+pos : offset+pos+1][0]
+	pos += 1
 
-	switch valueType {
+	switch v.Type {
 	case Types.DOUBLE:
 		var bits = binary.BigEndian.Uint64(data[offset+pos : offset+pos+8])
 		v.Data = math.Float64frombits(bits)
@@ -381,7 +358,7 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 		pos += arr.Cost
 
 	case Types.END_OF_OBJECT:
-		ended = true
+		v.Ended = true
 
 	case Types.STRICT_ARRAY:
 		arr, err := DecodeStrictArray(data, offset+pos, size-pos)
@@ -399,6 +376,8 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 		}
 
 		v.Data = date.Data
+		v.Timtstamp = date.Timtstamp
+		v.Timeoffset = date.Timeoffset
 		pos += date.Cost
 
 	case Types.LONG_STRING:
@@ -412,12 +391,10 @@ func DecodeValue(data []byte, offset int, size int) (*AMFValue, error) {
 
 	default:
 		pos = size
-		return nil, fmt.Errorf("Skipping unsupported AMF value type(%x)", valueType)
+		return nil, fmt.Errorf("Skipping unsupported AMF value type(%x)", v.Type)
 	}
 
-	v.Type = valueType
 	v.Cost = pos
-	v.Ended = ended
 
 	return &v, nil
 }
@@ -548,6 +525,10 @@ func (this *Encoder) EncodeObject(o *AMFObject) error {
 		return err
 	}
 
+	if o.Ended == false {
+		return nil
+	}
+
 	tmp := uint16(0)
 	err = binary.Write(&this.buffer, binary.BigEndian, &tmp)
 	if err != nil {
@@ -645,7 +626,7 @@ func (this *Encoder) EncodeStrictArray(o *AMFObject) error {
 	return nil
 }
 
-func (this *Encoder) EncodeDate(ts float64, off int16) error {
+func (this *Encoder) EncodeDate(ts float64, off uint16) error {
 	err := this.buffer.WriteByte(byte(Types.DATE))
 	if err != nil {
 		return err
@@ -743,7 +724,7 @@ func (this *Encoder) EncodeValue(v *AMFValue) error {
 		}
 
 	case Types.DATE:
-		err := this.EncodeDate(v.Data.(float64), v.Offset)
+		err := this.EncodeDate(v.Timtstamp, v.Timeoffset)
 		if err != nil {
 			return err
 		}

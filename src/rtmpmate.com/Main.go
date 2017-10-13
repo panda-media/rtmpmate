@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"rtmpmate.com/net/http/HTTPListener"
 	"rtmpmate.com/net/rtmp/RTMPListener"
+	"rtmpmate.com/net/websocket/WebSocketListener"
 )
 
 const _NAME_ string = "rtmpmate"
@@ -18,6 +19,14 @@ func main() {
 		fmt.Printf("Failed to create HTTPListener: %v.\n", err)
 		return
 	}
+
+	wsln, err := WebSocketListener.New()
+	if err != nil {
+		fmt.Printf("Failed to create HTTPListener: %v.\n", err)
+		return
+	}
+
+	httpln.HandleWebSocket(wsln.Handler)
 
 	go httpln.Listen("tcp4", 80)
 

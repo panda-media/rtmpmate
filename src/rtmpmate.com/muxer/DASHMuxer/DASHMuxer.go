@@ -1,7 +1,6 @@
 package DASHMuxer
 
 import (
-	"github.com/panda-media/muxer-fmp4/dashSlicer"
 	"os"
 	"rtmpmate.com/muxer/FMP4Muxer"
 	MuxerTypes "rtmpmate.com/muxer/Types"
@@ -37,11 +36,9 @@ func (this *DASHMuxer) Init(dir string, name string, t string) error {
 		return err
 	}
 
-	this.Slicer, err = dashSlicer.NEWSlicer(1000, 8000, 5, 1000, this)
-	if err != nil {
-		return err
-	}
-
+	this.MaxBufferLength = 0x00200000
+	this.MaxBufferTime = 3000
+	this.LowLatency = true
 	this.Record = true
 
 	return nil
@@ -68,5 +65,5 @@ func (this *DASHMuxer) AudioSegmentGenerated(audioSegment []byte, timestamp int6
 }
 
 func (this *DASHMuxer) GetMPD() ([]byte, error) {
-	return this.Slicer.MPD.GetMPDXML()
+	return nil, nil
 }

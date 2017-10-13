@@ -23,8 +23,8 @@ type BasicHeader struct {
 }
 
 type MessageHeader struct {
-	Timestamp       uint32
-	MessageLength   int // 3 bytes
+	Timestamp       uint32 // 3 bytes
+	MessageLength   int    // 3 bytes
 	MessageTypeID   byte
 	MessageStreamID uint32
 }

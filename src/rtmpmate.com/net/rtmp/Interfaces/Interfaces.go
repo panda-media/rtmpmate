@@ -2,12 +2,12 @@ package Interfaces
 
 import (
 	"io"
+	"rtmpmate.com/net/rtmp/AMF"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/AudioMessage"
 	"rtmpmate.com/net/rtmp/Message/DataMessage"
 	"rtmpmate.com/net/rtmp/Message/VideoMessage"
 	"rtmpmate.com/net/rtmp/Responder"
-	"rtmpmate.com/util/AMF"
 )
 
 type IEventDispatcher interface {

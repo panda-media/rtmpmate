@@ -2,10 +2,11 @@ package DataMessage
 
 import (
 	"container/list"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/Types"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
+	"rtmpmate.com/net/rtmp/ObjectEncoding"
 )
 
 type DataMessage struct {
@@ -19,7 +20,7 @@ type DataMessage struct {
 func New(encoding byte) (*DataMessage, error) {
 	var m DataMessage
 
-	if encoding == AMF.AMF0 {
+	if encoding == ObjectEncoding.AMF0 {
 		m.Type = Types.DATA
 	} else {
 		m.Type = Types.AMF3_DATA
@@ -61,7 +62,7 @@ func (this *DataMessage) Parse(b []byte, offset int, size int) error {
 		}
 	}
 
-	this.Payload = b
+	this.Payload = b[offset : offset+size]
 
 	return nil
 }

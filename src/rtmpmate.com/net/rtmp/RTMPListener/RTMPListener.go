@@ -24,7 +24,7 @@ func New() (*RTMPListener, error) {
 
 func (this *RTMPListener) Listen(network string, port int) {
 	if _, err := os.Stat(RTMP.APPLICATIONS); os.IsNotExist(err) {
-		err = os.MkdirAll(RTMP.APPLICATIONS, os.ModeDir)
+		err = os.MkdirAll(RTMP.APPLICATIONS+"/", os.ModeDir)
 		if err != nil {
 			return
 		}
@@ -65,7 +65,7 @@ func (this *RTMPListener) Listen(network string, port int) {
 	fmt.Printf("%v exiting...\n", this)
 }
 
-func (this *RTMPListener) handler(conn *net.TCPConn) {
+func (this *RTMPListener) handler(conn net.Conn) {
 	shaker, err := Handshaker.New(conn)
 	if err != nil {
 		fmt.Printf("Failed to create Handshaker: %v.\n", err)
@@ -79,5 +79,19 @@ func (this *RTMPListener) handler(conn *net.TCPConn) {
 		return
 	}
 
-	Application.HandshakeComplete(conn)
+	nc, err := Application.HandshakeComplete(conn)
+	if err != nil {
+		conn.Close()
+		fmt.Printf("Failed to get NetConnection: %v.\n", err)
+		return
+	}
+
+	nc.Protocol = "rtmp"
+
+	err = nc.Wait()
+	if err != nil {
+		fmt.Printf("Closing NetConnection: %v.\n", err)
+	}
+
+	nc.Close()
 }

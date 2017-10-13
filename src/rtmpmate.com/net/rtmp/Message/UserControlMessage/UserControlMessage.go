@@ -31,7 +31,7 @@ func (this *UserControlMessage) Parse(b []byte, offset int, size int) error {
 	this.Event.Type = binary.BigEndian.Uint16(b[offset+cost : offset+cost+2])
 	cost += 2
 
-	data := b[offset+cost : offset+size]
+	data := b[offset+cost:]
 	cost += size - cost
 
 	switch this.Event.Type {

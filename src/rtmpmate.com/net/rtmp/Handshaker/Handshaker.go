@@ -42,11 +42,11 @@ var FMS_KEY = []byte{
 }
 
 type Handshaker struct {
-	conn *net.TCPConn
+	conn net.Conn
 	mode uint8
 }
 
-func New(conn *net.TCPConn) (*Handshaker, error) {
+func New(conn net.Conn) (*Handshaker, error) {
 	if conn == nil {
 		return nil, syscall.EINVAL
 	}

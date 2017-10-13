@@ -25,11 +25,13 @@ func (this *BandwidthMessage) Parse(b []byte, offset int, size int) error {
 		return fmt.Errorf("data (size=%d) not enough", size)
 	}
 
-	this.AckWindowSize = binary.BigEndian.Uint32(b[offset : offset+4])
-	offset += 4
+	cost := 0
 
-	this.LimitType = b[offset]
-	offset += 1
+	this.AckWindowSize = binary.BigEndian.Uint32(b[offset+cost : offset+cost+4])
+	cost += 4
+
+	this.LimitType = b[offset+cost]
+	cost += 1
 
 	return nil
 }

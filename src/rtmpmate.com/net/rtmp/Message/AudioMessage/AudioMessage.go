@@ -23,18 +23,18 @@ func New() (*AudioMessage, error) {
 }
 
 func (this *AudioMessage) Parse(b []byte, offset int, size int) error {
+	cost := 0
+
 	this.Length = size
 
-	pos := 0
-	tmp := b[offset+pos]
+	tmp := b[offset+cost]
 	this.Format = (tmp >> 4) & 0x0F
 	this.SampleRate = (tmp >> 2) & 0x03
 	this.SampleSize = (tmp >> 1) & 0x01
 	this.Channels = tmp & 0x01
+	cost++
 
-	pos++
-	this.DataType = b[offset+pos]
-
+	this.DataType = b[offset+cost]
 	this.Payload = b[offset : offset+size]
 
 	return nil

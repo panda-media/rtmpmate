@@ -4,11 +4,12 @@ import (
 	"container/list"
 	"fmt"
 	"math"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 	"rtmpmate.com/net/rtmp/Message"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
 	"rtmpmate.com/net/rtmp/Message/Types"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
+	"rtmpmate.com/net/rtmp/ObjectEncoding"
 )
 
 type CommandMessage struct {
@@ -17,6 +18,8 @@ type CommandMessage struct {
 	TransactionID uint64
 
 	CommandObject  *AMF.AMFObject
+	Properties     *AMF.AMFObject
+	Information    *AMF.AMFObject
 	Arguments      *AMF.AMFObject
 	Response       *AMF.AMFValue
 	StreamID       uint64
@@ -34,7 +37,7 @@ type CommandMessage struct {
 func New(encoding byte) (*CommandMessage, error) {
 	var m CommandMessage
 
-	if encoding == AMF.AMF0 {
+	if encoding == ObjectEncoding.AMF0 {
 		m.Type = Types.COMMAND
 	} else {
 		m.Type = Types.AMF3_COMMAND

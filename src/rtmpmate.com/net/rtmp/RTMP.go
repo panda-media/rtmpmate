@@ -2,12 +2,12 @@ package rtmp
 
 import (
 	"container/list"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 )
 
 const (
-	APPLICATIONS = "applications/"
+	APPLICATIONS = "applications"
 )
 
 var (
@@ -32,6 +32,7 @@ func init() {
 		Key:  "mode",
 		Data: float64(1),
 	})
+	FMSProperties.Ended = true
 
 	FMSVersion.PushBack(&AMF.AMFValue{
 		Type: AMFTypes.STRING,

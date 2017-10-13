@@ -8,6 +8,8 @@ import (
 	"rtmpmate.com/events/NetStatusEvent/Code"
 	"rtmpmate.com/events/NetStatusEvent/Level"
 	"rtmpmate.com/net/rtmp"
+	"rtmpmate.com/net/rtmp/AMF"
+	AMFTypes "rtmpmate.com/net/rtmp/AMF/Types"
 	"rtmpmate.com/net/rtmp/Application/Instance"
 	"rtmpmate.com/net/rtmp/Message/BandwidthMessage/LimitTypes"
 	"rtmpmate.com/net/rtmp/Message/CommandMessage/Commands"
@@ -15,8 +17,6 @@ import (
 	"rtmpmate.com/net/rtmp/NetConnection"
 	"rtmpmate.com/net/rtmp/NetStream"
 	StreamTypes "rtmpmate.com/net/rtmp/Stream/Types"
-	"rtmpmate.com/util/AMF"
-	AMFTypes "rtmpmate.com/util/AMF/Types"
 	"sync"
 	"syscall"
 )
@@ -144,17 +144,18 @@ func (this *Application) onStop() {
 
 }
 
-func HandshakeComplete(conn *net.TCPConn) {
+func HandshakeComplete(conn net.Conn) (*NetConnection.NetConnection, error) {
 	nc, err := NetConnection.New(conn)
 	if err != nil {
 		fmt.Printf("Failed to create NetConnection: %v.\n", err)
-		return
+		return nil, err
 	}
 
 	nc.AddEventListener(CommandEvent.CONNECT, onConnect, 0)
 	nc.AddEventListener(CommandEvent.CREATE_STREAM, onCreateStream, 0)
 	nc.AddEventListener(CommandEvent.CLOSE, onDisconnect, 0)
-	nc.Wait()
+
+	return nc, nil
 }
 
 func onConnect(e *CommandEvent.CommandEvent) {
@@ -233,7 +234,7 @@ func (this *Application) onPublish(e *CommandEvent.CommandEvent) {
 		} else {
 			ns.Stream.Type = StreamTypes.PUBLISHING
 			ns.Stream.Sink(stream.Muxer)
-			//ns.Stream.Sink(stream.DASHMuxer)
+			ns.Stream.Sink(stream.FMP4Muxer)
 
 			info, _ := nc.GetInfoObject(Level.STATUS, Code.NETSTREAM_PUBLISH_START, "Publish start")
 			ns.SendStatus(e, info)
@@ -296,10 +297,10 @@ func onDisconnect(e *CommandEvent.CommandEvent) {
 	Disconnect(nc)
 }
 
-func Accept(nc *NetConnection.NetConnection) error {
+func Accept(nc *NetConnection.NetConnection) (*Application, error) {
 	app, err := Get(nc.AppName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	inst, err := app.GetInstance(nc.InstName)
@@ -307,7 +308,7 @@ func Accept(nc *NetConnection.NetConnection) error {
 
 	nc.Connected = true
 
-	return nil
+	return app, nil
 }
 
 func Reject(nc *NetConnection.NetConnection) error {

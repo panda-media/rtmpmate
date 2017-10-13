@@ -2,8 +2,10 @@ package HTTPListener
 
 import (
 	"fmt"
+	"github.com/gorilla/websocket"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"rtmpmate.com/muxer/DASHMuxer"
 	HTTP "rtmpmate.com/net/http"
@@ -17,9 +19,11 @@ var (
 )
 
 type HTTPListener struct {
-	network string
-	port    int
-	exiting bool
+	network   string
+	port      int
+	websocket bool
+	wsHandler func(w http.ResponseWriter, r *http.Request)
+	exiting   bool
 }
 
 func New() (*HTTPListener, error) {
@@ -29,7 +33,7 @@ func New() (*HTTPListener, error) {
 
 func (this *HTTPListener) Listen(network string, port int) {
 	if _, err := os.Stat(HTTP.WEBROOT); os.IsNotExist(err) {
-		err = os.MkdirAll(HTTP.WEBROOT, os.ModeDir)
+		err = os.MkdirAll(HTTP.WEBROOT+"/", os.ModeDir)
 		if err != nil {
 			return
 		}
@@ -50,69 +54,80 @@ func (this *HTTPListener) Listen(network string, port int) {
 	fmt.Printf("%v exiting...\n", this)
 }
 
+func (this *HTTPListener) HandleWebSocket(handler func(http.ResponseWriter, *http.Request)) {
+	this.websocket = true
+	this.wsHandler = handler
+}
+
 func (this *HTTPListener) handler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	if this.websocket && websocket.IsWebSocketUpgrade(r) {
+		this.wsHandler(w, r)
 		return
 	}
 
-	arr := urlRe.FindStringSubmatch(r.URL.Path)
-	if arr != nil {
-		appName := arr[1]
-		instName := arr[3]
-		streamName := arr[4]
-		fileName := arr[5]
-		extension := arr[6]
-
-		if instName == "" {
-			instName = "_definst_"
-		}
-
-		this.appendHeadersForStream(w)
-
-		switch extension {
-		case ".mpd":
-			this.serveMPD(w, r, appName, instName, streamName, fileName)
-			return
-
-		case ".m4s":
-			name := RTMP.APPLICATIONS + appName + "/" + instName + "/" + streamName + "/m4s/" + fileName + extension
-			http.ServeFile(w, r, name)
-			return
-
-		default:
-			name := RTMP.APPLICATIONS + appName + "/" + instName + "/" + streamName + "/" + fileName + extension
-			http.ServeFile(w, r, name)
-			return
-		}
+	if r.Method != "GET" {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
 	}
 
-	http.ServeFile(w, r, HTTP.WEBROOT+r.URL.Path)
+	if _, err := os.Stat(HTTP.WEBROOT + r.URL.Path); os.IsExist(err) {
+		http.ServeFile(w, r, HTTP.WEBROOT+r.URL.Path)
+		return
+	}
+
+	ext := path.Ext(r.URL.Path)
+	switch ext {
+	case ".mpd":
+		this.serveMPD(w, r)
+		return
+
+	default:
+	}
+
+	if _, err := os.Stat(RTMP.APPLICATIONS + r.URL.Path); os.IsExist(err) {
+		http.ServeFile(w, r, RTMP.APPLICATIONS+r.URL.Path)
+		return
+	}
+
+	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 }
 
-func (this *HTTPListener) serveMPD(w http.ResponseWriter, r *http.Request,
-	appName string, instName string, streamName string, fileName string) {
+func (this *HTTPListener) serveMPD(w http.ResponseWriter, r *http.Request) {
+	arr := urlRe.FindStringSubmatch(r.URL.Path)
+	if arr == nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	appName := arr[1]
+	instName := arr[3]
+	streamName := arr[4]
+	fileName := arr[5]
+	if instName == "" {
+		instName = "_definst_"
+	}
+
 	if fileName != DASHMuxer.MPD_FILENAME {
-		w.WriteHeader(http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
 	app, err := Application.Get(appName)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
 	inst, _ := app.GetInstance(instName)
 	stream, err := inst.GetStream(streamName, false)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
 	mpd, err := stream.DASHMuxer.GetMPD()
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
@@ -121,7 +136,7 @@ func (this *HTTPListener) serveMPD(w http.ResponseWriter, r *http.Request,
 }
 
 func (this *HTTPListener) appendHeadersForStream(w http.ResponseWriter) {
-	for k, v := range HTTP.STREAM_HEADERS {
-		w.Header().Set(k, v)
+	for k, v := range HTTP.COMMON_HEADERS {
+		w.Header().Set(k, v[0])
 	}
 }
