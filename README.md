@@ -1,6 +1,6 @@
 ﻿# rtmpmate
 
-> [[domain] http://studease.cn](http://studease.cn)
+> [[domain] http://studease.cn](http://studease.cn/rtmpmate.html)
 
 > [[source] https://github.com/studease/rtmpmate](https://github.com/studease/rtmpmate)
 
@@ -8,36 +8,8 @@
 
 > QQ群：528109813
 
-This is not only a websocket chat server, but also a functional media server.
-
-
-## Environment
---------------
-
-> linux
-
-/etc/profile: CGO_ENABLED=1
-
-$ source /etc/profile
-
-$ sudo yum install glibc-devel.i686 libstdc++-devel.i686
-
-> windows
-
-http://strawberryperl.com/
-
-http://strawberryperl.com/download/5.28.0.1/strawberry-perl-5.28.0.1-32bit.msi
-
-
-## Requirement
---------------
-
-> sqlite3
-
-$ go get github.com/mattn/go-sqlite3
-
-$ go install github.com/mattn/go-sqlite3
-
+This is not only a websocket chat server, but also a functional media server, supports 
+RTMP/FLV/HLS/MPEG-DASH/fMP4.
 
 ## Static Builds
 ----------------
@@ -45,6 +17,21 @@ $ go install github.com/mattn/go-sqlite3
 > Windows: [rtmpmate-win32-latest.zip](http://studease.cn/static/rtmpmate-win32-latest.zip)
 
 > Linux: [rtmpmate-linux-latest.zip](http://studease.cn/static/rtmpmate-linux-latest.zip)
+
+
+## CDKeys for Free
+------------------
+
+* ~~**1031-1258-3831-5825-6283**~~
+* ~~**1031-6800-6732-1714-5786**~~
+* **1031-8775-3856-0415-5763**
+* **1031-0017-5051-2068-5550**
+* **1031-7326-0358-2167-3800**
+* **1031-4745-6253-2376-8724**
+* **1031-3868-7381-0446-4614**
+* **1031-7323-0463-2336-2410**
+* ~~**1031-6686-5722-7535-4774**~~
+* **1031-9276-8109-8226-4292**
 
 
 ## Clients
