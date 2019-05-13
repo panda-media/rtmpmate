@@ -10,7 +10,7 @@
 
 This is a modern live streaming server. It supports:
 
-* **RTMP, HTTP-FLV, HTTP-fMP4, MPEG-DASH, HLS**
+* **RTMP, RTSP (TCP), HTTP-FLV, HTTP-fMP4, MPEG-DASH, HLS**
 * **FLV Recording (Remote Controllable), Live Playback**
 * **WebSocket Chat (Danmu)**
 * **Event Report**
@@ -35,9 +35,9 @@ This is a modern live streaming server. It supports:
 * ~~**1031-1258-3831-5825-6283**~~
 * ~~**1031-6800-6732-1714-5786**~~
 * ~~**1031-8775-3856-0415-5763**~~
-* **1031-0017-5051-2068-5550**
-* **1031-7326-0358-2167-3800**
-* **1031-4745-6253-2376-8724**
+* ~~**1031-0017-5051-2068-5550**~~
+* ~~**1031-7326-0358-2167-3800**~~
+* ~~**1031-4745-6253-2376-8724**~~
 * **1031-3868-7381-0446-4614**
 * **1031-7323-0463-2336-2410**
 * ~~**1031-6686-5722-7535-4774**~~
